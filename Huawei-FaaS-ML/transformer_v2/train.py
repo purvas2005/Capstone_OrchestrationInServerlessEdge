@@ -23,6 +23,20 @@ print("=" * 70)
 
 dataset = HuaweiForecastDataset()
 
+# -------------------------------------------------
+# Development subset
+# -------------------------------------------------
+
+SUBSET_SIZE = 50000
+
+dataset = Subset(
+    dataset,
+    range(SUBSET_SIZE)
+)
+
+print(f"Training on {SUBSET_SIZE:,} samples")
+
+
 print()
 
 print(f"Total Sequences : {len(dataset):,}")
