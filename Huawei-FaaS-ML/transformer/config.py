@@ -1,0 +1,22 @@
+import torch
+
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+SEQUENCE_LENGTH = 60
+PREDICTION_HORIZON = 10
+
+BATCH_SIZE = 64
+
+LEARNING_RATE = 1e-4
+
+EPOCHS = 2
+
+D_MODEL = 128
+
+NHEAD = 8
+
+NUM_LAYERS = 4
+
+DROPOUT = 0.1
+
+DIM_FEEDFORWARD = 512

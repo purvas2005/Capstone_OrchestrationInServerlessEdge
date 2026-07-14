@@ -1,0 +1,12 @@
+Metric,Value
+Requests,947970744.0
+Functions,4267.0
+Users,1720.0
+Pods,200198.0
+Clusters,4.0
+Regions,5.0
+Average CPU,0.20032426418838858
+Average Memory,269.8925794713575
+Average Runtime,0.05818781128995336
+Start Time,2592000.0
+End Time,2678399.584
