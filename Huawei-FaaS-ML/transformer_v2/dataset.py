@@ -192,6 +192,7 @@ class HuaweiForecastDataset(Dataset):
                 frame[column] = pd.to_numeric(frame[column], errors="coerce")
 
         frame = frame.fillna(0)
+        frame["raw_target"] = frame[TARGET_COLUMN].astype(np.float32)
         frame = frame.astype(
             {column: np.float32 for column in PAST_VALUE_FEATURES}
         )
@@ -252,7 +253,7 @@ class HuaweiForecastDataset(Dataset):
 
             values = group[PAST_VALUE_FEATURES].to_numpy(dtype=np.float32)
             past_time = group[TIME_FEATURES].to_numpy(dtype=np.float32)
-            target = np.log1p(group[TARGET_COLUMN].to_numpy(dtype=np.float32))
+            target = np.log1p(group["raw_target"].to_numpy(dtype=np.float32))
 
             static = {
                 "function": int(group["funcName"].iloc[0]),
