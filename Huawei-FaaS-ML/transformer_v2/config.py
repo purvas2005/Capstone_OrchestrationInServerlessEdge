@@ -15,6 +15,7 @@ LOG_DIR = PROJECT_ROOT / "logs"
 
 DB_PATH = DATABASE_DIR / "huawei.duckdb"
 
+DATABASE_DIR.mkdir(exist_ok=True)
 MODEL_DIR.mkdir(exist_ok=True)
 LOG_DIR.mkdir(exist_ok=True)
 

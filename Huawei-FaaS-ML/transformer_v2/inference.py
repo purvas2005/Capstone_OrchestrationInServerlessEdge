@@ -90,19 +90,21 @@ class ForecastEngine:
         # Undo log transform
         # ------------------------------------------
 
-        mu = np.expm1(mu)
-
-        sigma = np.expm1(sigma)
-
         lower = np.maximum(
 
             0,
 
-            mu - 1.96 * sigma
+            np.expm1(mu - 1.96 * sigma)
 
         )
 
-        upper = mu + 1.96 * sigma
+        upper = np.expm1(
+
+            mu + 1.96 * sigma
+
+        )
+
+        mu = np.expm1(mu)
 
         return {
 
