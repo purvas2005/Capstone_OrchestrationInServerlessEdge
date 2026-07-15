@@ -113,15 +113,15 @@ validation_loader = DataLoader(
 
 model = HuaweiForecastTransformer(
 
-    num_functions=dataset.dataset.num_functions,
+    num_functions=dataset.num_functions,
 
-    num_regions=dataset.dataset.num_regions,
+    num_regions=dataset.num_regions,
 
-    num_clusters=dataset.dataset.num_clusters,
+    num_clusters=dataset.num_clusters,
 
-    num_categories=dataset.dataset.num_categories,
+    num_categories=dataset.num_categories,
 
-    num_stability=dataset.dataset.num_stability
+    num_stability=dataset.num_stability
 
 )
 
