@@ -36,9 +36,16 @@ SUBSET_SIZE = TRAIN_SUBSET_SIZE
 
 if SUBSET_SIZE is not None:
 
+    subset_indices = torch.randperm(
+        len(dataset),
+        generator=torch.Generator().manual_seed(
+            RANDOM_SEED
+        )
+    )[:SUBSET_SIZE].tolist()
+
     dataset = Subset(
         dataset,
-        range(SUBSET_SIZE)
+        subset_indices
     )
 
     print(f"Training on {SUBSET_SIZE:,} samples")
