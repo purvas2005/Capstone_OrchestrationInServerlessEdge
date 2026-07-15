@@ -2,7 +2,6 @@ import torch
 
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
-from torch.utils.data import Subset
 
 from .config import *
 
@@ -27,39 +26,6 @@ dataset = HuaweiForecastDataset()
 print()
 
 print(f"Total Sequences : {len(dataset):,}")
-
-# -------------------------------------------------
-# Small validation subset
-# -------------------------------------------------
-
-SUBSET_SIZE = TRAIN_SUBSET_SIZE
-
-if SUBSET_SIZE is not None:
-
-    subset_indices = torch.randperm(
-        len(dataset),
-        generator=torch.Generator().manual_seed(
-            RANDOM_SEED
-        )
-    )[:SUBSET_SIZE].tolist()
-
-    dataset = Subset(
-        dataset,
-        subset_indices
-    )
-
-    print(f"Training on {SUBSET_SIZE:,} samples")
-
-# ----------------------------------------------------------
-# Development mode
-# ----------------------------------------------------------
-#
-# Uncomment during debugging.
-#
-# from torch.utils.data import Subset
-# dataset = Subset(dataset, range(50000))
-#
-# ----------------------------------------------------------
 
 train_size = int(
 
