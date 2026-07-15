@@ -29,10 +29,10 @@ print()
 print(f"Total Sequences : {len(dataset):,}")
 
 # -------------------------------------------------
-# Optional development subset
+# Small validation subset
 # -------------------------------------------------
 
-SUBSET_SIZE = None
+SUBSET_SIZE = TRAIN_SUBSET_SIZE
 
 if SUBSET_SIZE is not None:
 
