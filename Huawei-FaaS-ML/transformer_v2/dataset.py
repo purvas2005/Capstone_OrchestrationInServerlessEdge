@@ -197,12 +197,14 @@ class HuaweiForecastDataset(Dataset):
         # Normalize numerical inputs
         # --------------------------------------------------
 
-        self.feature_mean = frame[PAST_VALUE_FEATURES].mean()
-        self.feature_std = frame[PAST_VALUE_FEATURES].std(ddof=0).replace(0, 1.0)
+        feature_frame = frame[PAST_VALUE_FEATURES].astype(np.float32)
+
+        self.feature_mean = feature_frame.mean()
+        self.feature_std = feature_frame.std(ddof=0).replace(0, 1.0)
 
         frame.loc[:, PAST_VALUE_FEATURES] = (
-            frame[PAST_VALUE_FEATURES] - self.feature_mean
-        ) / self.feature_std
+            (feature_frame - self.feature_mean) / self.feature_std
+        ).to_numpy(dtype=np.float32)
 
         self.target_transform = "log1p"
 
