@@ -192,6 +192,9 @@ class HuaweiForecastDataset(Dataset):
                 frame[column] = pd.to_numeric(frame[column], errors="coerce")
 
         frame = frame.fillna(0)
+        frame = frame.astype(
+            {column: np.float32 for column in PAST_VALUE_FEATURES}
+        )
 
         # --------------------------------------------------
         # Normalize numerical inputs
