@@ -23,6 +23,8 @@ class Trainer:
 
         optimizer,
 
+        criterion,
+
 
         scheduler,
 
