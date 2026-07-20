@@ -152,7 +152,7 @@ GRADIENT_CLIP = 1.0
 
 EARLY_STOPPING_PATIENCE = 5
 
-NUM_WORKERS = 4
+NUM_WORKERS = 2
 
 PIN_MEMORY = torch.cuda.is_available()
 

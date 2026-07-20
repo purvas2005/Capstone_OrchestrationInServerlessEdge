@@ -2,6 +2,8 @@ from pathlib import Path
 import csv
 
 import torch
+from torch.cuda.amp import GradScaler
+from torch.cuda.amp import autocast
 from torch.nn.utils import clip_grad_norm_
 
 from .config import *
@@ -21,7 +23,6 @@ class Trainer:
 
         optimizer,
 
-        criterion,
 
         scheduler,
 
@@ -38,6 +39,8 @@ class Trainer:
         self.scheduler = scheduler
 
         self.device = device
+        self.use_amp = self.device.type == "cuda"
+        self.scaler = GradScaler(enabled=self.use_amp)
 
         self.best_loss = float("inf")
 
@@ -98,52 +101,74 @@ class Trainer:
         for batch_idx, batch in enumerate(loader):
 
             self.optimizer.zero_grad()
+            self.optimizer.zero_grad(set_to_none=True)
 
-            prediction = self.model(
+            with autocast(enabled=self.use_amp):
 
-                batch["past_values"].to(self.device),
+                prediction = self.model(
 
-                batch["past_time_features"].to(self.device),
+                    batch["past_values"].to(self.device, non_blocking=True),
 
-                batch["future_time_features"].to(self.device),
+                    batch["past_time_features"].to(self.device, non_blocking=True),
 
-                batch["function"].to(self.device),
+                    batch["future_time_features"].to(self.device, non_blocking=True),
 
-                batch["region"].to(self.device),
+                    batch["function"].to(self.device, non_blocking=True),
 
-                batch["cluster"].to(self.device),
+                    batch["region"].to(self.device, non_blocking=True),
 
-                batch["category"].to(self.device),
+                    batch["cluster"].to(self.device, non_blocking=True),
 
-                batch["stability"].to(self.device)
+                    batch["category"].to(self.device, non_blocking=True),
 
-            )
+                    batch["stability"].to(self.device, non_blocking=True)
 
-            target = batch["target"].to(
+                )
 
-                self.device
+                target = batch["target"].to(
 
-            )
+                    self.device,
 
-            loss = self.criterion(
+                    non_blocking=True
 
-                prediction,
+                )
 
-                target
+                loss = self.criterion(
 
-            )
+                    prediction,
 
-            loss.backward()
+                    target
+                )
 
-            clip_grad_norm_(
+            if self.use_amp:
 
-                self.model.parameters(),
+                self.scaler.scale(loss).backward()
 
-                GRADIENT_CLIP
+                self.scaler.unscale_(self.optimizer)
 
-            )
+                clip_grad_norm_(
 
-            self.optimizer.step()
+                    self.model.parameters(),
+
+                    GRADIENT_CLIP
+                )
+
+                self.scaler.step(self.optimizer)
+
+                self.scaler.update()
+
+            else:
+
+                loss.backward()
+
+                clip_grad_norm_(
+
+                    self.model.parameters(),
+
+                    GRADIENT_CLIP
+                )
+
+                self.optimizer.step()
 
             running_loss += loss.item()
 
@@ -181,39 +206,42 @@ class Trainer:
 
         for batch in loader:
 
-            prediction = self.model(
+            with autocast(enabled=self.use_amp):
 
-                batch["past_values"].to(self.device),
+                prediction = self.model(
 
-                batch["past_time_features"].to(self.device),
+                    batch["past_values"].to(self.device, non_blocking=True),
 
-                batch["future_time_features"].to(self.device),
+                    batch["past_time_features"].to(self.device, non_blocking=True),
 
-                batch["function"].to(self.device),
+                    batch["future_time_features"].to(self.device, non_blocking=True),
 
-                batch["region"].to(self.device),
+                    batch["function"].to(self.device, non_blocking=True),
 
-                batch["cluster"].to(self.device),
+                    batch["region"].to(self.device, non_blocking=True),
 
-                batch["category"].to(self.device),
+                    batch["cluster"].to(self.device, non_blocking=True),
 
-                batch["stability"].to(self.device)
+                    batch["category"].to(self.device, non_blocking=True),
 
-            )
+                    batch["stability"].to(self.device, non_blocking=True)
 
-            target = batch["target"].to(
+                )
 
-                self.device
+                target = batch["target"].to(
 
-            )
+                    self.device,
 
-            loss = self.criterion(
+                    non_blocking=True
+                )
 
-                prediction,
+                loss = self.criterion(
 
-                target
+                    prediction,
 
-            )
+                    target
+
+                )
 
             validation_loss += loss.item()
 
