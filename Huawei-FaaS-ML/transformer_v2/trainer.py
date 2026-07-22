@@ -115,6 +115,8 @@ class Trainer:
 
                     batch["future_time_features"].to(self.device, non_blocking=True),
 
+                    batch["past_target"].to(self.device, non_blocking=True),
+
                     batch["function"].to(self.device, non_blocking=True),
 
                     batch["region"].to(self.device, non_blocking=True),
@@ -217,6 +219,8 @@ class Trainer:
                     batch["past_time_features"].to(self.device, non_blocking=True),
 
                     batch["future_time_features"].to(self.device, non_blocking=True),
+
+                    batch["past_target"].to(self.device, non_blocking=True),
 
                     batch["function"].to(self.device, non_blocking=True),
 

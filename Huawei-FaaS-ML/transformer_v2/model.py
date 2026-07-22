@@ -154,6 +154,8 @@ class HuaweiForecastTransformer(nn.Module):
 
         future_time_features,
 
+        past_target,
+
         function,
 
         region,
@@ -222,6 +224,9 @@ class HuaweiForecastTransformer(nn.Module):
 
         )
 
+        last_observation = past_target[:, -1].unsqueeze(-1)
+        prediction["mu"] = prediction["mu"] + last_observation
+
         return prediction
 
 
@@ -276,6 +281,14 @@ if __name__ == "__main__":
             PREDICTION_HORIZON,
 
             len(TIME_FEATURES)
+
+        ),
+
+        torch.randn(
+
+            batch,
+
+            SEQUENCE_LENGTH
 
         ),
 

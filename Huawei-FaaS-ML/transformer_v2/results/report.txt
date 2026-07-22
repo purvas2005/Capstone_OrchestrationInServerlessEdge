@@ -1,0 +1,41 @@
+
+DATASET SUMMARY
+Requests: 947970744
+Functions: 4267
+Users: 1720
+Pods: 200198
+Clusters: 4
+Regions: 5
+Average CPU: 0.20032426418838858
+Average Memory: 269.8925794713575
+Average Runtime: 0.05818781128995336
+Start Time: 2592000.0
+End Time: 2678399.584
+
+REGION STATISTICS
+
+FUNCTION STATISTICS
+
+FUNCTION CLASSIFICATION
+category
+Normal    2405
+Rare      1003
+Hot        859
+Name: count, dtype: int64
+
+FUNCTION REUSE
+Average Requests/Pod: 1958.0391986606758
+
+WORKLOAD SKEW
+Gini: 0.9965897113797032
+
+TEMPORAL HOTSPOTS
+Peak Requests/Minute: 1556233
+
+STABLE VS NOISY
+stability
+Noisy     3223
+Stable    1044
+Name: count, dtype: int64
+
+GENERATING FIGURES

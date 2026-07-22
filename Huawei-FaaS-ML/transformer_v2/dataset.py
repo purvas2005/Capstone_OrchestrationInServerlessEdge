@@ -516,7 +516,8 @@ class HuaweiForecastDataset(Dataset):
             "cluster": torch.tensor(static["cluster"], dtype=torch.long),
             "category": torch.tensor(static["category"], dtype=torch.long),
             "stability": torch.tensor(static["stability"], dtype=torch.long),
-            "target": torch.tensor(target, dtype=torch.float32),
+              "past_target": torch.tensor(group["target"][start:end], dtype=torch.float32),
+              "target": torch.tensor(target, dtype=torch.float32),
         }
 
     # ======================================================
