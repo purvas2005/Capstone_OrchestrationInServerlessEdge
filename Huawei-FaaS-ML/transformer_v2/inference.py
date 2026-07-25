@@ -260,7 +260,7 @@ class ForecastEngine:
 
             sigma,
 
-            sample["past_target"].cpu().numpy()[0]
+            sample["past_target"].cpu().numpy()
 
         )
 

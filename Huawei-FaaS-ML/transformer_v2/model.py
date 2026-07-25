@@ -224,9 +224,6 @@ class HuaweiForecastTransformer(nn.Module):
 
         )
 
-        last_observation = past_target[:, -1].unsqueeze(-1)
-        prediction["mu"] = prediction["mu"] + last_observation
-
         return prediction
 
 
