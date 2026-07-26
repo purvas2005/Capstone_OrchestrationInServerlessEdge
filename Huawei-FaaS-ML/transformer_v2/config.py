@@ -37,6 +37,10 @@ VALID_SPLIT = 0.10
 
 RANDOM_SEED = 42
 
+# Irreducible uncertainty in log1p(requests) space.  This prevents Gaussian
+# NLL from collapsing predicted variance on repeated low-load sequences.
+MIN_LOG_SIGMA = 0.05
+
 # ==========================================================
 # Feature Columns
 # ==========================================================

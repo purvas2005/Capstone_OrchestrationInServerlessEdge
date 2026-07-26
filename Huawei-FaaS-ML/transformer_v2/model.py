@@ -73,13 +73,13 @@ class DistributionHead(nn.Module):
 
         )
 
-    def forward(self, decoder_output):
+    def forward(self, decoder_output, baseline):
 
         mu = self.mu_head(
 
             decoder_output
 
-        ).squeeze(-1)
+        ).squeeze(-1) + baseline
 
         sigma = self.sigma_head(
 
@@ -87,7 +87,7 @@ class DistributionHead(nn.Module):
 
         ).squeeze(-1)
 
-        sigma = sigma + 1e-6
+        sigma = sigma + MIN_LOG_SIGMA
 
         return {
 
@@ -178,6 +178,8 @@ class HuaweiForecastTransformer(nn.Module):
 
             past_time_features,
 
+            past_target,
+
             function,
 
             region,
@@ -218,9 +220,15 @@ class HuaweiForecastTransformer(nn.Module):
         # Distribution Parameters
         # -----------------------------------------
 
+        # Residual forecasting around the latest observed workload avoids
+        # regressing hot and rare functions toward one global mean.
+        baseline = past_target[:, -1:].expand(-1, PREDICTION_HORIZON)
+
         prediction = self.output_head(
 
-            decoder_output
+            decoder_output,
+
+            baseline
 
         )
 

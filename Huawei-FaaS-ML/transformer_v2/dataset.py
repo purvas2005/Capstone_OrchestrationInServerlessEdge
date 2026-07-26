@@ -489,6 +489,33 @@ class HuaweiForecastDataset(Dataset):
 
         return len(self.samples)
 
+    def temporal_split_indices(self, train_fraction=TRAIN_SPLIT):
+        """Chronologically reserve the tail of each function series.
+
+        Randomly splitting overlapping sliding windows leaks almost identical
+        history/future pairs into validation and produces misleading scores.
+        """
+
+        cutoffs = {
+            group_id: max(
+                1,
+                min(
+                    len(group["target"]) - SEQUENCE_LENGTH - PREDICTION_HORIZON,
+                    int((len(group["target"]) - SEQUENCE_LENGTH - PREDICTION_HORIZON + 1) * train_fraction),
+                ),
+            )
+            for group_id, group in enumerate(self.groups)
+        }
+
+        train_indices, validation_indices = [], []
+        for index, (group_id, start) in enumerate(self.samples):
+            if start < cutoffs[group_id]:
+                train_indices.append(index)
+            else:
+                validation_indices.append(index)
+
+        return train_indices, validation_indices
+
     # ======================================================
     # Get Sample
     # ======================================================

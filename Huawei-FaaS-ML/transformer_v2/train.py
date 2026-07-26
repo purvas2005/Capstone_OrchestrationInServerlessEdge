@@ -1,7 +1,7 @@
 import torch
 
 from torch.utils.data import DataLoader
-from torch.utils.data import random_split
+from torch.utils.data import Subset
 
 from .config import *
 
@@ -27,43 +27,11 @@ print()
 
 print(f"Total Sequences : {len(dataset):,}")
 
-train_size = int(
+train_indices, validation_indices = dataset.temporal_split_indices()
 
-    TRAIN_SPLIT *
+train_dataset = Subset(dataset, train_indices)
 
-    len(dataset)
-
-)
-
-validation_size = (
-
-    len(dataset)
-
-    -
-
-    train_size
-
-)
-
-train_dataset, validation_dataset = random_split(
-
-    dataset,
-
-    [
-
-        train_size,
-
-        validation_size
-
-    ],
-
-    generator=torch.Generator().manual_seed(
-
-        RANDOM_SEED
-
-    )
-
-)
+validation_dataset = Subset(dataset, validation_indices)
 
 print()
 

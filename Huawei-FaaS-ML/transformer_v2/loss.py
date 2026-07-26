@@ -37,19 +37,9 @@ class GaussianNLLLoss(nn.Module):
 
         sigma = prediction["sigma"]
 
-        distribution = torch.distributions.Normal(
+        normalized_error = (target - mu) / sigma
 
-            mu,
-
-            sigma
-
-        )
-
-        loss = -distribution.log_prob(
-
-            target
-
-        )
+        loss = 0.5 * normalized_error.square() + torch.log(sigma)
 
         return loss.mean()
 

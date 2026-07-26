@@ -84,6 +84,30 @@ class TimeEmbedding(nn.Module):
         return self.network(x)
 
 
+class TargetHistoryEmbedding(nn.Module):
+    """Embed unnormalised log1p request history separately from features."""
+
+    def __init__(self):
+
+        super().__init__()
+
+        self.network = nn.Sequential(
+
+            nn.Linear(1, D_MODEL),
+
+            nn.LayerNorm(D_MODEL),
+
+            nn.GELU(),
+
+            nn.Dropout(DROPOUT)
+
+        )
+
+    def forward(self, x):
+
+        return self.network(x.unsqueeze(-1))
+
+
 # ==========================================================
 # Static Metadata Embedding
 # ==========================================================
@@ -313,6 +337,8 @@ class InputEmbedding(nn.Module):
 
         self.time_embedding = TimeEmbedding()
 
+        self.target_history_embedding = TargetHistoryEmbedding()
+
         self.static_embedding = StaticEmbedding(
 
             num_functions=num_functions,
@@ -336,6 +362,8 @@ class InputEmbedding(nn.Module):
         past_values,
 
         past_time_features,
+
+        past_target,
 
         function,
 
@@ -366,6 +394,12 @@ class InputEmbedding(nn.Module):
         time_embedding = self.time_embedding(
 
             past_time_features
+
+        )
+
+        target_embedding = self.target_history_embedding(
+
+            past_target
 
         )
 
@@ -413,6 +447,8 @@ class InputEmbedding(nn.Module):
 
             time_embedding +
 
+            target_embedding +
+
             expanded_static
 
         )
@@ -453,6 +489,14 @@ if __name__ == "__main__":
         sequence,
 
         len(TIME_FEATURES)
+
+    )
+
+    past_target = torch.randn(
+
+        batch,
+
+        sequence
 
     )
 
@@ -525,6 +569,8 @@ if __name__ == "__main__":
         values,
 
         time,
+
+        past_target,
 
         function,
 
