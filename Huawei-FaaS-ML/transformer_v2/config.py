@@ -162,13 +162,13 @@ EPOCHS = 20
 
 # Fast, reproducible pilot run.  Set both to ``None`` for the full training
 # run after the architecture/hyperparameters have proven promising.
-PILOT_TRAIN_SAMPLES = 100_000
-PILOT_VALIDATION_SAMPLES = 20_000
-PILOT_EPOCHS = 8
+PILOT_TRAIN_SAMPLES = 300_000
+PILOT_VALIDATION_SAMPLES = 40_000
+PILOT_EPOCHS = 12
 
 # Evaluation uses a fixed chronological subset during a pilot.  Set to None
 # when reporting the final full-holdout result.
-PILOT_EVALUATION_SAMPLES = 20_000
+PILOT_EVALUATION_SAMPLES = 40_000
 
 LEARNING_RATE = 1e-4
 
@@ -213,6 +213,12 @@ DEVICE = torch.device(
 
 PRINT_EVERY = 50
 
-CHECKPOINT_NAME = "forecast_transformer.pt"
+# Pilot checkpoints are isolated from the promoted full model so experiments
+# can be compared without overwriting the currently serving checkpoint.
+CHECKPOINT_NAME = (
+    "forecast_transformer_pilot.pt"
+    if PILOT_TRAIN_SAMPLES is not None
+    else "forecast_transformer.pt"
+)
 
 TRAIN_LOG = MODEL_DIR / "training_log.csv"
