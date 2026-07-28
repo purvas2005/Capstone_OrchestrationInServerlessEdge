@@ -2,8 +2,6 @@ from pathlib import Path
 import csv
 
 import torch
-from torch.cuda.amp import GradScaler
-from torch.cuda.amp import autocast
 from torch.nn.utils import clip_grad_norm_
 
 from .config import *
@@ -42,7 +40,7 @@ class Trainer:
 
         self.device = device
         self.use_amp = self.device.type == "cuda"
-        self.scaler = GradScaler(enabled=self.use_amp)
+        self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
 
         self.best_loss = float("inf")
 
@@ -107,7 +105,10 @@ class Trainer:
             self.optimizer.zero_grad()
             self.optimizer.zero_grad(set_to_none=True)
 
-            with autocast(enabled=self.use_amp):
+            with torch.amp.autocast(
+                device_type=self.device.type,
+                enabled=self.use_amp,
+            ):
 
                 prediction = self.model(
 
@@ -186,7 +187,7 @@ class Trainer:
 
                     f"{batch_idx}/{len(loader)} "
 
-                    f"Loss={loss.item():.5f}"
+                    f"Objective={loss.item():.5f}"
 
                 )
 
@@ -212,7 +213,10 @@ class Trainer:
 
         for batch in loader:
 
-            with autocast(enabled=self.use_amp):
+            with torch.amp.autocast(
+                device_type=self.device.type,
+                enabled=self.use_amp,
+            ):
 
                 prediction = self.model(
 
@@ -289,6 +293,28 @@ class Trainer:
             total_values += target.numel()
 
         return total_error / total_values
+
+    @torch.no_grad()
+
+    def validate_persistence_mae(self, loader):
+
+        """MAE of repeating the final observed request count."""
+
+        total_error = 0.0
+        total_values = 0
+
+        for batch in loader:
+
+            target = torch.expm1(
+                batch["target"].to(self.device, non_blocking=True)
+            ).clamp_min(0.0)
+            persistence = torch.expm1(
+                batch["past_target"].to(self.device, non_blocking=True)[:, -1:]
+            ).expand_as(target)
+            total_error += torch.abs(persistence - target).sum().item()
+            total_values += target.numel()
+
+        return total_error / total_values
     # ======================================================
     # Complete Training
     # ======================================================
@@ -339,6 +365,12 @@ class Trainer:
 
             )
 
+            persistence_mae = self.validate_persistence_mae(
+
+                val_loader
+
+            )
+
             if self.scheduler is not None:
 
                 self.scheduler.step(
@@ -356,6 +388,16 @@ class Trainer:
             print(f"Validation Loss : {validation_loss:.6f}")
 
             print(f"Validation MAE  : {validation_mae:.6f}")
+
+            print(f"Persistence MAE : {persistence_mae:.6f}")
+
+            print(
+
+                f"MAE Improvement : "
+
+                f"{(1.0 - validation_mae / persistence_mae) * 100:.2f}%"
+
+            )
 
             print(f"Learning Rate   : {current_lr:.8f}")
 
