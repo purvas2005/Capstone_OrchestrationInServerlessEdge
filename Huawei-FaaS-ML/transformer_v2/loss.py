@@ -1,6 +1,11 @@
 import torch
 import torch.nn as nn
-from .config import LOSS_FUNCTION, PREDICTION_HORIZON
+from .config import (
+    LOSS_FUNCTION,
+    PREDICTION_HORIZON,
+    REQUEST_MAE_LOSS_SCALE,
+    REQUEST_MAE_LOSS_WEIGHT,
+)
 
 # ==========================================================
 # Gaussian Negative Log Likelihood
@@ -41,7 +46,13 @@ class GaussianNLLLoss(nn.Module):
 
         loss = 0.5 * normalized_error.square() + torch.log(sigma)
 
-        return loss.mean()
+        # NLL calibrates the uncertainty interval.  This auxiliary term trains
+        # the central forecast on the metric used by the serving workload.
+        request_prediction = torch.expm1(mu).clamp_min(0.0)
+        request_target = torch.expm1(target).clamp_min(0.0)
+        request_mae = torch.abs(request_prediction - request_target).mean()
+
+        return loss.mean() + REQUEST_MAE_LOSS_WEIGHT * request_mae / REQUEST_MAE_LOSS_SCALE
 
 
 # ==========================================================

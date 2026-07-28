@@ -41,6 +41,16 @@ RANDOM_SEED = 42
 # NLL from collapsing predicted variance on repeated low-load sequences.
 MIN_LOG_SIGMA = 0.05
 
+# The lognormal mean grows exponentially with sigma.  Bounding sigma prevents
+# a few pathological uncertainty estimates from becoming enormous request
+# forecasts and dominating request-space error.
+MAX_LOG_SIGMA = 1.00
+
+# The direct request-count MAE is scaled to keep it numerically comparable to
+# Gaussian NLL while still selecting a useful central forecast.
+REQUEST_MAE_LOSS_WEIGHT = 1.0
+REQUEST_MAE_LOSS_SCALE = 1000.0
+
 # ==========================================================
 # Feature Columns
 # ==========================================================
@@ -149,6 +159,16 @@ STATIC_EMBED_DIM = (
 BATCH_SIZE = 64
 
 EPOCHS = 20
+
+# Fast, reproducible pilot run.  Set both to ``None`` for the full training
+# run after the architecture/hyperparameters have proven promising.
+PILOT_TRAIN_SAMPLES = 100_000
+PILOT_VALIDATION_SAMPLES = 20_000
+PILOT_EPOCHS = 8
+
+# Evaluation uses a fixed chronological subset during a pilot.  Set to None
+# when reporting the final full-holdout result.
+PILOT_EVALUATION_SAMPLES = 20_000
 
 LEARNING_RATE = 1e-4
 

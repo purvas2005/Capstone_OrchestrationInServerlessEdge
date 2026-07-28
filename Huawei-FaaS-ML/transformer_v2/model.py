@@ -67,9 +67,7 @@ class DistributionHead(nn.Module):
 
                 1
 
-            ),
-
-            nn.Softplus()
+            )
 
         )
 
@@ -81,13 +79,13 @@ class DistributionHead(nn.Module):
 
         ).squeeze(-1) + baseline
 
-        sigma = self.sigma_head(
+        raw_sigma = self.sigma_head(
 
             decoder_output
 
         ).squeeze(-1)
 
-        sigma = sigma + MIN_LOG_SIGMA
+        sigma = MIN_LOG_SIGMA + (MAX_LOG_SIGMA - MIN_LOG_SIGMA) * torch.sigmoid(raw_sigma)
 
         return {
 

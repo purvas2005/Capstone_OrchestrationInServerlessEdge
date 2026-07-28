@@ -82,6 +82,8 @@ class Trainer:
 
                     "validation_loss",
 
+                    "validation_mae",
+
                     "learning_rate"
 
                 ])
@@ -254,6 +256,39 @@ class Trainer:
         validation_loss /= len(loader)
 
         return validation_loss
+
+    @torch.no_grad()
+
+    def validate_request_mae(self, loader):
+
+        """MAE of the lognormal median in original request-count space."""
+
+        self.model.eval()
+        total_error = 0.0
+        total_values = 0
+
+        for batch in loader:
+
+            prediction = self.model(
+
+                batch["past_values"].to(self.device, non_blocking=True),
+                batch["past_time_features"].to(self.device, non_blocking=True),
+                batch["future_time_features"].to(self.device, non_blocking=True),
+                batch["past_target"].to(self.device, non_blocking=True),
+                batch["function"].to(self.device, non_blocking=True),
+                batch["region"].to(self.device, non_blocking=True),
+                batch["cluster"].to(self.device, non_blocking=True),
+                batch["category"].to(self.device, non_blocking=True),
+                batch["stability"].to(self.device, non_blocking=True),
+
+            )
+
+            forecast = torch.expm1(prediction["mu"]).clamp_min(0.0)
+            target = torch.expm1(batch["target"].to(self.device, non_blocking=True)).clamp_min(0.0)
+            total_error += torch.abs(forecast - target).sum().item()
+            total_values += target.numel()
+
+        return total_error / total_values
     # ======================================================
     # Complete Training
     # ======================================================
@@ -298,11 +333,17 @@ class Trainer:
 
             )
 
+            validation_mae = self.validate_request_mae(
+
+                val_loader
+
+            )
+
             if self.scheduler is not None:
 
                 self.scheduler.step(
 
-                    validation_loss
+                validation_mae
 
                 )
 
@@ -314,15 +355,17 @@ class Trainer:
 
             print(f"Validation Loss : {validation_loss:.6f}")
 
+            print(f"Validation MAE  : {validation_mae:.6f}")
+
             print(f"Learning Rate   : {current_lr:.8f}")
 
             # ------------------------------------------
             # Save Best Model
             # ------------------------------------------
 
-            if validation_loss < self.best_loss:
+            if validation_mae < self.best_loss:
 
-                self.best_loss = validation_loss
+                self.best_loss = validation_mae
 
                 self.wait = 0
 
@@ -337,7 +380,10 @@ class Trainer:
                         self.optimizer.state_dict(),
 
                     "validation_loss":
-                        validation_loss
+                        validation_loss,
+
+                    "validation_mae":
+                        validation_mae
 
                 }
 
@@ -395,6 +441,8 @@ class Trainer:
 
                     validation_loss,
 
+                    validation_mae,
+
                     current_lr
 
                 ])
@@ -427,7 +475,7 @@ class Trainer:
 
         print(
 
-            f"Best Validation Loss : "
+            f"Best Validation MAE : "
 
             f"{self.best_loss:.6f}"
 

@@ -29,6 +29,39 @@ print(f"Total Sequences : {len(dataset):,}")
 
 train_indices, validation_indices = dataset.temporal_split_indices()
 
+
+def deterministic_subsample(indices, maximum, seed):
+
+    """Keep a reproducible uniform subset without contaminating the holdout."""
+
+    if maximum is None or len(indices) <= maximum:
+        return indices
+
+    generator = torch.Generator().manual_seed(seed)
+    selected = torch.randperm(len(indices), generator=generator)[:maximum].tolist()
+    return [indices[index] for index in selected]
+
+
+train_indices = deterministic_subsample(
+
+    train_indices,
+
+    PILOT_TRAIN_SAMPLES,
+
+    RANDOM_SEED
+
+)
+
+validation_indices = deterministic_subsample(
+
+    validation_indices,
+
+    PILOT_VALIDATION_SAMPLES,
+
+    RANDOM_SEED + 1
+
+)
+
 train_dataset = Subset(dataset, train_indices)
 
 validation_dataset = Subset(dataset, validation_indices)
@@ -38,6 +71,10 @@ print()
 print(f"Training Samples   : {len(train_dataset):,}")
 
 print(f"Validation Samples : {len(validation_dataset):,}")
+
+if PILOT_TRAIN_SAMPLES is not None:
+
+    print("Pilot mode: deterministic training/validation subsets are active.")
 
 # ==========================================================
 # DataLoaders
@@ -167,7 +204,7 @@ trainer.fit(
 
     validation_loader,
 
-    EPOCHS
+    PILOT_EPOCHS if PILOT_TRAIN_SAMPLES is not None else EPOCHS
 
 )
 
