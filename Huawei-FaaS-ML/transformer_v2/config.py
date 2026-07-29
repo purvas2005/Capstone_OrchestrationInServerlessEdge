@@ -160,15 +160,12 @@ BATCH_SIZE = 64
 
 EPOCHS = 20
 
-# Fast, reproducible pilot run.  Set both to ``None`` for the full training
-# run after the architecture/hyperparameters have proven promising.
-PILOT_TRAIN_SAMPLES = 300_000
-PILOT_VALIDATION_SAMPLES = 40_000
-PILOT_EPOCHS = 12
-
-# Evaluation uses a fixed chronological subset during a pilot.  Set to None
-# when reporting the final full-holdout result.
-PILOT_EVALUATION_SAMPLES = 40_000
+# Full training/evaluation: all chronological windows are used.  Re-enable
+# these limits only for future, low-cost pilot experiments.
+PILOT_TRAIN_SAMPLES = None
+PILOT_VALIDATION_SAMPLES = None
+PILOT_EPOCHS = 8
+PILOT_EVALUATION_SAMPLES = None
 
 LEARNING_RATE = 1e-4
 
@@ -221,4 +218,8 @@ CHECKPOINT_NAME = (
     else "forecast_transformer.pt"
 )
 
-TRAIN_LOG = MODEL_DIR / "training_log.csv"
+TRAIN_LOG = (
+    MODEL_DIR / "training_log_pilot.csv"
+    if PILOT_TRAIN_SAMPLES is not None
+    else MODEL_DIR / "training_log_full.csv"
+)
