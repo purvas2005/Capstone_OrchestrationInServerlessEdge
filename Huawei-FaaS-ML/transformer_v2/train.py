@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 
 from torch.utils.data import DataLoader
 from torch.utils.data import Subset
@@ -27,7 +28,7 @@ print()
 
 print(f"Total Sequences : {len(dataset):,}")
 
-train_dataset, validation_dataset = dataset.temporal_split()
+train_dataset, validation_dataset, test_dataset = dataset.temporal_split()
 
 
 def deterministic_subsample(source, maximum, seed):
@@ -42,13 +43,51 @@ def deterministic_subsample(source, maximum, seed):
     return Subset(source, selected)
 
 
-train_dataset = deterministic_subsample(
+def balanced_activity_subsample(source, maximum, seed, active_fraction):
+    """Sample training windows evenly by whether their future horizon has demand."""
+
+    if maximum is None or len(source) <= maximum:
+        return source
+
+    active, inactive = [], []
+    for local_index in range(len(source)):
+        source_index = source.source_index(local_index)
+        bucket = active if source.dataset.window_has_activity(source_index) else inactive
+        bucket.append(local_index)
+
+    rng = np.random.default_rng(seed)
+    desired_active = min(int(round(maximum * active_fraction)), len(active))
+    desired_inactive = min(maximum - desired_active, len(inactive))
+
+    # If one bucket is smaller than its target, fill the remainder from the
+    # other bucket rather than duplicating windows.
+    remaining = maximum - desired_active - desired_inactive
+    if remaining:
+        extra_active = min(remaining, len(active) - desired_active)
+        desired_active += extra_active
+        desired_inactive += min(remaining - extra_active, len(inactive) - desired_inactive)
+
+    selected = np.concatenate((
+        rng.choice(active, size=desired_active, replace=False),
+        rng.choice(inactive, size=desired_inactive, replace=False),
+    ))
+    rng.shuffle(selected)
+    print(
+        "Balanced training sample: "
+        f"{desired_active:,} active-horizon / {desired_inactive:,} inactive-horizon windows"
+    )
+    return Subset(source, selected.tolist())
+
+
+train_dataset = balanced_activity_subsample(
 
     train_dataset,
 
     PILOT_TRAIN_SAMPLES,
 
-    RANDOM_SEED
+    RANDOM_SEED,
+
+    ACTIVE_TRAIN_FRACTION,
 
 )
 
@@ -67,6 +106,8 @@ print()
 print(f"Training Samples   : {len(train_dataset):,}")
 
 print(f"Validation Samples : {len(validation_dataset):,}")
+
+print(f"Test Samples       : {len(test_dataset):,} (held out)")
 
 if PILOT_TRAIN_SAMPLES is not None:
 

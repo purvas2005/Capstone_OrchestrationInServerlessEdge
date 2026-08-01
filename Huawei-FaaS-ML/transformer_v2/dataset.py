@@ -106,10 +106,14 @@ class TemporalWindowSubset(Dataset):
 
     def __getitem__(self, index):
 
+        return self.dataset[self.source_index(index)]
+
+    def source_index(self, index):
+        """Map this subset's compact index to the underlying dataset index."""
+
         index = int(index)
         range_index = int(np.searchsorted(self.offsets, index, side="right") - 1)
-        source_index = int(self.starts[range_index] + index - self.offsets[range_index])
-        return self.dataset[source_index]
+        return int(self.starts[range_index] + index - self.offsets[range_index])
 
 
 # ==========================================================
@@ -142,8 +146,8 @@ class HuaweiForecastDataset(Dataset):
         if _table_exists(self.connection, FEATURE_TABLE):
             print(f"Using engineered table: {FEATURE_TABLE}")
             self._loaded_from_raw = False
-            frame = self.connection.execute(
-                f"""
+            if PILOT_MAX_FUNCTION_GROUPS is None:
+                query = f"""
                 SELECT *
                 FROM {FEATURE_TABLE}
                 ORDER BY
@@ -152,7 +156,32 @@ class HuaweiForecastDataset(Dataset):
                     funcName,
                     minute
                 """
-            ).df()
+            else:
+                print(
+                    "Pilot mode: loading "
+                    f"{PILOT_MAX_FUNCTION_GROUPS} deterministic function groups."
+                )
+                query = f"""
+                WITH selected_groups AS (
+                    SELECT region, clusterName, funcName
+                    FROM (
+                        SELECT DISTINCT region, clusterName, funcName
+                        FROM {FEATURE_TABLE}
+                    )
+                    ORDER BY hash(region, clusterName, funcName)
+                    LIMIT {PILOT_MAX_FUNCTION_GROUPS}
+                )
+                SELECT features.*
+                FROM {FEATURE_TABLE} AS features
+                INNER JOIN selected_groups AS selected
+                    USING (region, clusterName, funcName)
+                ORDER BY
+                    features.region,
+                    features.clusterName,
+                    features.funcName,
+                    features.minute
+                """
+            frame = self.connection.execute(query).df()
         elif _table_exists(self.connection, "requests"):
             print("Using raw Huawei trace table: requests")
             self._loaded_from_raw = True
@@ -186,13 +215,23 @@ class HuaweiForecastDataset(Dataset):
             value: index for index, value in enumerate(sorted(frame["clusterName"].unique()))
         }
 
+        # ``funcName`` is only unique within a region/cluster.  The learned
+        # function embedding must use the same identity as the time-series
+        # grouping and metadata tables.
+        function_keys = (
+            frame["region"]
+            + "::"
+            + frame["clusterName"]
+            + "::"
+            + frame["funcName"]
+        )
         self.function_map = {
-            value: index for index, value in enumerate(sorted(frame["funcName"].unique()))
+            value: index for index, value in enumerate(sorted(function_keys.unique()))
         }
 
         frame["region"] = frame["region"].map(self.region_map).astype(np.int64)
         frame["clusterName"] = frame["clusterName"].map(self.cluster_map).astype(np.int64)
-        frame["funcName"] = frame["funcName"].map(self.function_map).astype(np.int64)
+        frame["funcName"] = function_keys.map(self.function_map).astype(np.int64)
 
         # --------------------------------------------------
         # Metadata labels
@@ -532,27 +571,53 @@ class HuaweiForecastDataset(Dataset):
 
         return int(self.sample_offsets[-1])
 
-    def temporal_split(self, train_fraction=TRAIN_SPLIT):
-        """Chronologically reserve the tail of each function series.
+    def temporal_split(
+        self,
+        train_fraction=TRAIN_SPLIT,
+        validation_fraction=VALID_SPLIT,
+    ):
+        """Chronologically partition each series into train/validation/test.
 
         Randomly splitting overlapping sliding windows leaks almost identical
         history/future pairs into validation and produces misleading scores.
         """
 
+        if not 0 < train_fraction < 1:
+            raise ValueError("train_fraction must be between zero and one.")
+        if not 0 < validation_fraction < 1 - train_fraction:
+            raise ValueError("validation_fraction must leave room for a test split.")
+
         train_ranges = []
         validation_ranges = []
+        test_ranges = []
 
         for group_id, count in enumerate(self.group_sample_counts):
 
-            cutoff = max(1, min(count - 1, int(count * train_fraction)))
+            train_end = max(1, min(count - 2, int(count * train_fraction)))
+            validation_end = max(
+                train_end + 1,
+                min(count - 1, int(count * (train_fraction + validation_fraction))),
+            )
             group_offset = int(self.sample_offsets[group_id])
-            train_ranges.append((group_offset, cutoff))
-            validation_ranges.append((group_offset + cutoff, count - cutoff))
+            train_ranges.append((group_offset, train_end))
+            validation_ranges.append((group_offset + train_end, validation_end - train_end))
+            test_ranges.append((group_offset + validation_end, count - validation_end))
 
-        return TemporalWindowSubset(self, train_ranges), TemporalWindowSubset(
-            self,
-            validation_ranges,
+        return (
+            TemporalWindowSubset(self, train_ranges),
+            TemporalWindowSubset(self, validation_ranges),
+            TemporalWindowSubset(self, test_ranges),
         )
+
+    def window_has_activity(self, index):
+        """Whether the forecast horizon of a source window contains demand."""
+
+        index = int(index)
+        group_id = int(np.searchsorted(self.sample_offsets, index, side="right") - 1)
+        start = int(index - self.sample_offsets[group_id])
+        future_start = start + SEQUENCE_LENGTH
+        future_end = future_start + PREDICTION_HORIZON
+        return bool(np.any(self.groups[group_id]["target"][future_start:future_end] > 0))
 
     # ======================================================
     # Get Sample

@@ -31,9 +31,13 @@ PREDICTION_HORIZON = 10
 
 WARM_CAPACITY_LOOKBACK = 30
 
-TRAIN_SPLIT = 0.90
+# Chronological partitions within each function series.  The final test tail
+# remains untouched while model choices are made using validation only.
+TRAIN_SPLIT = 0.80
 
 VALID_SPLIT = 0.10
+
+TEST_SPLIT = 0.10
 
 RANDOM_SEED = 42
 
@@ -163,10 +167,21 @@ EPOCHS = 20
 # Dense minute series yield roughly ten times as many windows as the sparse
 # event-only table.  Validate the new data semantics with this bounded run
 # before intentionally removing these limits for final training.
-PILOT_TRAIN_SAMPLES = 300_000
-PILOT_VALIDATION_SAMPLES = 40_000
-PILOT_EPOCHS = 12
-PILOT_EVALUATION_SAMPLES = 40_000
+# CPU-friendly pilot.  It validates the dense-data pipeline before a longer
+# experiment on a GPU-capable instance.
+PILOT_TRAIN_SAMPLES = 25_000
+PILOT_VALIDATION_SAMPLES = 5_000
+PILOT_EPOCHS = 5
+PILOT_EVALUATION_SAMPLES = 5_000
+# Loading all 6,949 dense function series exceeds the RAM of small training
+# instances.  Keep complete series for a deterministic pilot subset so its
+# chronological validation remains valid.
+PILOT_MAX_FUNCTION_GROUPS = 300
+
+# Random windows overwhelmingly contain no requests in the dense trace.
+# Balance only the training subset by whether its future horizon has activity;
+# validation and test data retain their natural distributions.
+ACTIVE_TRAIN_FRACTION = 0.50
 
 LEARNING_RATE = 1e-4
 

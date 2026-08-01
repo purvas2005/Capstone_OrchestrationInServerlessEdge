@@ -1,4 +1,4 @@
-"""Evaluate the trained forecaster on a chronological holdout.
+"""Evaluate the trained forecaster on an untouched chronological test split.
 
 This intentionally does not alter ``test.py`` or the user-facing forecast
 format.  It gives one reproducible accuracy number for model selection and
@@ -28,13 +28,13 @@ from .model import HuaweiForecastTransformer
 @torch.no_grad()
 def main():
     dataset = HuaweiForecastDataset()
-    _, validation = dataset.temporal_split()
-    if PILOT_EVALUATION_SAMPLES is not None and len(validation) > PILOT_EVALUATION_SAMPLES:
+    _, _, test = dataset.temporal_split()
+    if PILOT_EVALUATION_SAMPLES is not None and len(test) > PILOT_EVALUATION_SAMPLES:
         generator = torch.Generator().manual_seed(RANDOM_SEED + 2)
-        selected = torch.randperm(len(validation), generator=generator)[:PILOT_EVALUATION_SAMPLES]
-        validation = Subset(validation, selected.tolist())
+        selected = torch.randperm(len(test), generator=generator)[:PILOT_EVALUATION_SAMPLES]
+        test = Subset(test, selected.tolist())
     loader = DataLoader(
-        validation,
+        test,
         batch_size=BATCH_SIZE,
         shuffle=False,
         num_workers=NUM_WORKERS,
@@ -52,7 +52,7 @@ def main():
     model.load_state_dict(checkpoint.get("model_state_dict", checkpoint))
     model.eval()
 
-    median_errors, mean_errors, baseline_errors = [], [], []
+    median_errors, mean_errors, baseline_errors, targets = [], [], [], []
     for batch in loader:
         inputs = {
             name: batch[name].to(DEVICE, non_blocking=True)
@@ -74,10 +74,12 @@ def main():
         median_errors.append((request_median - request_target).detach().cpu().numpy().ravel())
         mean_errors.append((request_mean - request_target).detach().cpu().numpy().ravel())
         baseline_errors.append((persistence - request_target).detach().cpu().numpy().ravel())
+        targets.append(request_target.detach().cpu().numpy().ravel())
 
     median_errors = np.concatenate(median_errors)
     mean_errors = np.concatenate(mean_errors)
     baseline_errors = np.concatenate(baseline_errors)
+    targets = np.concatenate(targets)
 
     def metrics(errors):
         return float(np.mean(np.abs(errors))), float(math.sqrt(np.mean(errors ** 2)))
@@ -87,9 +89,9 @@ def main():
     base_mae, base_rmse = metrics(baseline_errors)
 
     print("=" * 70)
-    print("Chronological Holdout Accuracy (request count space)")
+    print("Chronological Test Forecast Metrics (request count space)")
     print("=" * 70)
-    print(f"Samples             : {len(validation):,}")
+    print(f"Samples             : {len(test):,}")
 
     if PILOT_EVALUATION_SAMPLES is not None:
         print("Evaluation mode     : deterministic pilot subset")
@@ -98,6 +100,16 @@ def main():
     print(f"Persistence MAE     : {base_mae:.4f}")
     print(f"Persistence RMSE    : {base_rmse:.4f}")
     print(f"MAE improvement     : {(1 - model_mae / base_mae) * 100:.2f}%")
+
+    for label, mask in (("zero demand", targets == 0), ("active demand", targets > 0)):
+        if mask.any():
+            subset_model_mae = float(np.mean(np.abs(median_errors[mask])))
+            subset_base_mae = float(np.mean(np.abs(baseline_errors[mask])))
+            improvement = (1 - subset_model_mae / subset_base_mae) * 100 if subset_base_mae else float("nan")
+            print(
+                f"{label.title()} MAE  : {subset_model_mae:.4f} vs persistence "
+                f"{subset_base_mae:.4f} ({improvement:.2f}% improvement)"
+            )
 
 
 if __name__ == "__main__":
