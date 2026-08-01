@@ -198,15 +198,27 @@ class HuaweiForecastDataset(Dataset):
         # Metadata labels
         # --------------------------------------------------
 
-        if self._loaded_from_raw or "category" not in frame.columns or frame["category"].dtype == object:
+        if self._loaded_from_raw or "category" not in frame.columns:
             frame["category"] = self._derive_categories(frame)
         else:
-            frame["category"] = pd.to_numeric(frame["category"], errors="coerce").fillna(0).astype(np.int64)
+            if frame["category"].dtype == object:
+                frame["category"] = (
+                    frame["category"].map(CATEGORY_MAP).fillna(CATEGORY_MAP["Rare"])
+                )
+            else:
+                frame["category"] = pd.to_numeric(frame["category"], errors="coerce").fillna(0)
+            frame["category"] = frame["category"].astype(np.int64)
 
-        if self._loaded_from_raw or "stability" not in frame.columns or frame["stability"].dtype == object:
+        if self._loaded_from_raw or "stability" not in frame.columns:
             frame["stability"] = self._derive_stability(frame)
         else:
-            frame["stability"] = pd.to_numeric(frame["stability"], errors="coerce").fillna(0).astype(np.int64)
+            if frame["stability"].dtype == object:
+                frame["stability"] = (
+                    frame["stability"].map(STABILITY_MAP).fillna(STABILITY_MAP["Noisy"])
+                )
+            else:
+                frame["stability"] = pd.to_numeric(frame["stability"], errors="coerce").fillna(0)
+            frame["stability"] = frame["stability"].astype(np.int64)
 
         # --------------------------------------------------
         # Ensure model features exist and are numeric

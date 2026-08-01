@@ -209,7 +209,9 @@ SELECT
 FROM base
 
 LEFT JOIN {METADATA} fm
-ON base.funcName = fm.funcName
+ON base.region = fm.region
+    AND base.clusterName = fm.clusterName
+    AND base.funcName = fm.funcName
 
 ORDER BY
 

@@ -26,6 +26,10 @@ WITH stats AS (
 
 SELECT
 
+    region,
+
+    clusterName,
+
     funcName,
 
     SUM(requests) AS total_requests,
@@ -42,7 +46,7 @@ SELECT
 
 FROM {SOURCE}
 
-GROUP BY funcName
+GROUP BY region, clusterName, funcName
 
 ),
 
