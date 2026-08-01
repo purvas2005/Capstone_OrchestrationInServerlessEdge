@@ -160,12 +160,13 @@ BATCH_SIZE = 64
 
 EPOCHS = 20
 
-# Full training/evaluation: all chronological windows are used.  Re-enable
-# these limits only for future, low-cost pilot experiments.
-PILOT_TRAIN_SAMPLES = None
-PILOT_VALIDATION_SAMPLES = None
-PILOT_EPOCHS = 8
-PILOT_EVALUATION_SAMPLES = None
+# Dense minute series yield roughly ten times as many windows as the sparse
+# event-only table.  Validate the new data semantics with this bounded run
+# before intentionally removing these limits for final training.
+PILOT_TRAIN_SAMPLES = 300_000
+PILOT_VALIDATION_SAMPLES = 40_000
+PILOT_EPOCHS = 12
+PILOT_EVALUATION_SAMPLES = 40_000
 
 LEARNING_RATE = 1e-4
 

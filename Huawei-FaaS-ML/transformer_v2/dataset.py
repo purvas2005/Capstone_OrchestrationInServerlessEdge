@@ -84,6 +84,34 @@ def _select_numeric_column(frame, candidates, default=0.0):
     return pd.Series(default, index=frame.index, dtype=np.float32)
 
 
+class TemporalWindowSubset(Dataset):
+    """A compact collection of contiguous source-window ranges.
+
+    Dense minute series create millions of valid windows.  Storing every
+    source index as a Python integer/tuple is needlessly expensive, so this
+    dataset resolves a local index to a source index through small range
+    offset arrays.
+    """
+
+    def __init__(self, dataset, ranges):
+
+        self.dataset = dataset
+        self.starts = np.asarray([start for start, _ in ranges], dtype=np.int64)
+        lengths = np.asarray([length for _, length in ranges], dtype=np.int64)
+        self.offsets = np.concatenate(([0], np.cumsum(lengths, dtype=np.int64)))
+
+    def __len__(self):
+
+        return int(self.offsets[-1])
+
+    def __getitem__(self, index):
+
+        index = int(index)
+        range_index = int(np.searchsorted(self.offsets, index, side="right") - 1)
+        source_index = int(self.starts[range_index] + index - self.offsets[range_index])
+        return self.dataset[source_index]
+
+
 # ==========================================================
 # Dataset
 # ==========================================================
@@ -235,7 +263,7 @@ class HuaweiForecastDataset(Dataset):
         # --------------------------------------------------
 
         self.groups = []
-        self.samples = []
+        self.group_sample_counts = []
 
         grouped = frame.groupby(
             ["region", "clusterName", "funcName"],
@@ -275,10 +303,13 @@ class HuaweiForecastDataset(Dataset):
 
             max_start = len(group) - SEQUENCE_LENGTH - PREDICTION_HORIZON + 1
 
-            for start in range(max_start):
-                self.samples.append((group_id, start))
+            self.group_sample_counts.append(max_start)
 
-        print(f"Sequences : {len(self.samples):,}")
+        self.sample_offsets = np.concatenate(
+            ([0], np.cumsum(self.group_sample_counts, dtype=np.int64))
+        )
+
+        print(f"Sequences : {len(self):,}")
 
     # ======================================================
     # Raw Huawei trace -> feature table
@@ -487,34 +518,29 @@ class HuaweiForecastDataset(Dataset):
 
     def __len__(self):
 
-        return len(self.samples)
+        return int(self.sample_offsets[-1])
 
-    def temporal_split_indices(self, train_fraction=TRAIN_SPLIT):
+    def temporal_split(self, train_fraction=TRAIN_SPLIT):
         """Chronologically reserve the tail of each function series.
 
         Randomly splitting overlapping sliding windows leaks almost identical
         history/future pairs into validation and produces misleading scores.
         """
 
-        cutoffs = {
-            group_id: max(
-                1,
-                min(
-                    len(group["target"]) - SEQUENCE_LENGTH - PREDICTION_HORIZON,
-                    int((len(group["target"]) - SEQUENCE_LENGTH - PREDICTION_HORIZON + 1) * train_fraction),
-                ),
-            )
-            for group_id, group in enumerate(self.groups)
-        }
+        train_ranges = []
+        validation_ranges = []
 
-        train_indices, validation_indices = [], []
-        for index, (group_id, start) in enumerate(self.samples):
-            if start < cutoffs[group_id]:
-                train_indices.append(index)
-            else:
-                validation_indices.append(index)
+        for group_id, count in enumerate(self.group_sample_counts):
 
-        return train_indices, validation_indices
+            cutoff = max(1, min(count - 1, int(count * train_fraction)))
+            group_offset = int(self.sample_offsets[group_id])
+            train_ranges.append((group_offset, cutoff))
+            validation_ranges.append((group_offset + cutoff, count - cutoff))
+
+        return TemporalWindowSubset(self, train_ranges), TemporalWindowSubset(
+            self,
+            validation_ranges,
+        )
 
     # ======================================================
     # Get Sample
@@ -522,7 +548,9 @@ class HuaweiForecastDataset(Dataset):
 
     def __getitem__(self, index):
 
-        group_id, start = self.samples[index]
+        index = int(index)
+        group_id = int(np.searchsorted(self.sample_offsets, index, side="right") - 1)
+        start = int(index - self.sample_offsets[group_id])
         group = self.groups[group_id]
 
         end = start + SEQUENCE_LENGTH

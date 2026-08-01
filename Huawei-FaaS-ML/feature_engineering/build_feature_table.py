@@ -1,7 +1,12 @@
-from database import get_connection
+try:
+    from .database import get_connection
+    from .config import DENSE_OUTPUT_TABLE
+except ImportError:  # Supports direct execution from this directory.
+    from database import get_connection
+    from config import DENSE_OUTPUT_TABLE
 import time
 
-SOURCE = "aggregated_requests"
+SOURCE = DENSE_OUTPUT_TABLE
 METADATA = "function_metadata"
 TARGET = "feature_table"
 
@@ -178,16 +183,16 @@ SELECT
     (base.minute % 60)
         AS minute_of_hour,
 
-    ((base.minute/60)%24)
+    (FLOOR(base.minute/60)%24)
         AS hour_of_day,
 
     SIN(
-        2*PI()*((base.minute/60)%24)/24.0
+        2*PI()*(FLOOR(base.minute/60)%24)/24.0
     )
         AS hour_sin,
 
     COS(
-        2*PI()*((base.minute/60)%24)/24.0
+        2*PI()*(FLOOR(base.minute/60)%24)/24.0
     )
         AS hour_cos,
 

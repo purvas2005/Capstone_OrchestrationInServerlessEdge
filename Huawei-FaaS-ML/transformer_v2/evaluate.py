@@ -28,12 +28,11 @@ from .model import HuaweiForecastTransformer
 @torch.no_grad()
 def main():
     dataset = HuaweiForecastDataset()
-    _, validation_indices = dataset.temporal_split_indices()
-    if PILOT_EVALUATION_SAMPLES is not None and len(validation_indices) > PILOT_EVALUATION_SAMPLES:
+    _, validation = dataset.temporal_split()
+    if PILOT_EVALUATION_SAMPLES is not None and len(validation) > PILOT_EVALUATION_SAMPLES:
         generator = torch.Generator().manual_seed(RANDOM_SEED + 2)
-        selected = torch.randperm(len(validation_indices), generator=generator)[:PILOT_EVALUATION_SAMPLES]
-        validation_indices = [validation_indices[index] for index in selected.tolist()]
-    validation = Subset(dataset, validation_indices)
+        selected = torch.randperm(len(validation), generator=generator)[:PILOT_EVALUATION_SAMPLES]
+        validation = Subset(validation, selected.tolist())
     loader = DataLoader(
         validation,
         batch_size=BATCH_SIZE,

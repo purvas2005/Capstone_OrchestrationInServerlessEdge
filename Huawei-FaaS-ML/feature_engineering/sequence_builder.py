@@ -6,7 +6,10 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
-from .config import DB_PATH
+try:
+    from .config import DB_PATH
+except ImportError:  # Supports direct execution from this directory.
+    from config import DB_PATH
 
 # ==========================================================
 # Configuration
@@ -248,4 +251,3 @@ if __name__ == "__main__":
 
     print("Stability")
     print(sample["stability"])
-

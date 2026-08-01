@@ -1,4 +1,7 @@
-from database import get_connection
+try:
+    from .database import get_connection
+except ImportError:  # Supports direct execution from this directory.
+    from database import get_connection
 import time
 
 SOURCE_TABLE = "aggregated_requests"

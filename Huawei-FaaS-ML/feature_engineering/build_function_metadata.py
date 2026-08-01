@@ -1,7 +1,12 @@
-from database import get_connection
+try:
+    from .database import get_connection
+    from .config import DENSE_OUTPUT_TABLE
+except ImportError:  # Supports direct execution from this directory.
+    from database import get_connection
+    from config import DENSE_OUTPUT_TABLE
 import time
 
-SOURCE = "aggregated_requests"
+SOURCE = DENSE_OUTPUT_TABLE
 TARGET = "function_metadata"
 
 con = get_connection()

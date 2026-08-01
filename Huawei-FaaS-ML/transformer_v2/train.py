@@ -27,24 +27,24 @@ print()
 
 print(f"Total Sequences : {len(dataset):,}")
 
-train_indices, validation_indices = dataset.temporal_split_indices()
+train_dataset, validation_dataset = dataset.temporal_split()
 
 
-def deterministic_subsample(indices, maximum, seed):
+def deterministic_subsample(source, maximum, seed):
 
     """Keep a reproducible uniform subset without contaminating the holdout."""
 
-    if maximum is None or len(indices) <= maximum:
-        return indices
+    if maximum is None or len(source) <= maximum:
+        return source
 
     generator = torch.Generator().manual_seed(seed)
-    selected = torch.randperm(len(indices), generator=generator)[:maximum].tolist()
-    return [indices[index] for index in selected]
+    selected = torch.randperm(len(source), generator=generator)[:maximum].tolist()
+    return Subset(source, selected)
 
 
-train_indices = deterministic_subsample(
+train_dataset = deterministic_subsample(
 
-    train_indices,
+    train_dataset,
 
     PILOT_TRAIN_SAMPLES,
 
@@ -52,19 +52,15 @@ train_indices = deterministic_subsample(
 
 )
 
-validation_indices = deterministic_subsample(
+validation_dataset = deterministic_subsample(
 
-    validation_indices,
+    validation_dataset,
 
     PILOT_VALIDATION_SAMPLES,
 
     RANDOM_SEED + 1
 
 )
-
-train_dataset = Subset(dataset, train_indices)
-
-validation_dataset = Subset(dataset, validation_indices)
 
 print()
 
