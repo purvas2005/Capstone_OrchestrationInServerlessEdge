@@ -55,6 +55,12 @@ MAX_LOG_SIGMA = 1.00
 REQUEST_MAE_LOSS_WEIGHT = 1.0
 REQUEST_MAE_LOSS_SCALE = 1000.0
 
+# Minute-level functions are mostly idle.  Model this explicitly: a binary
+# occurrence forecast decides whether any request arrives, then a lognormal
+# distribution estimates its positive count.
+OCCURRENCE_LOSS_WEIGHT = 1.0
+POSITIVE_COUNT_LOSS_WEIGHT = 1.0
+
 # ==========================================================
 # Feature Columns
 # ==========================================================
@@ -229,9 +235,9 @@ PRINT_EVERY = 50
 # Pilot checkpoints are isolated from the promoted full model so experiments
 # can be compared without overwriting the currently serving checkpoint.
 CHECKPOINT_NAME = (
-    "forecast_transformer_pilot.pt"
+    "forecast_transformer_hurdle_pilot.pt"
     if PILOT_TRAIN_SAMPLES is not None
-    else "forecast_transformer.pt"
+    else "forecast_transformer_hurdle.pt"
 )
 
 TRAIN_LOG = (

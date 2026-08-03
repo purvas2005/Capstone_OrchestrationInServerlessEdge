@@ -1,10 +1,13 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from .config import (
     LOSS_FUNCTION,
     PREDICTION_HORIZON,
     REQUEST_MAE_LOSS_SCALE,
     REQUEST_MAE_LOSS_WEIGHT,
+    OCCURRENCE_LOSS_WEIGHT,
+    POSITIVE_COUNT_LOSS_WEIGHT,
 )
 
 # ==========================================================
@@ -13,7 +16,7 @@ from .config import (
 
 class GaussianNLLLoss(nn.Module):
     """
-    Loss for probabilistic forecasting.
+    Hurdle loss for probabilistic forecasting.
 
     Model predicts
 
@@ -21,7 +24,9 @@ class GaussianNLLLoss(nn.Module):
 
         sigma
 
-    Loss = -log p(y | mu, sigma)
+    The occurrence head is trained on every minute.  The Gaussian count head
+    is trained only where a request actually occurred, so zeros cannot pull
+    positive-count estimates toward zero.
     """
 
     def __init__(self):
@@ -42,17 +47,28 @@ class GaussianNLLLoss(nn.Module):
 
         sigma = prediction["sigma"]
 
-        normalized_error = (target - mu) / sigma
+        has_demand = target > 0.0
+        occurrence_loss = F.binary_cross_entropy_with_logits(
+            prediction["occurrence_logit"], has_demand.float()
+        )
 
-        loss = 0.5 * normalized_error.square() + torch.log(sigma)
+        if has_demand.any():
+            normalized_error = (target[has_demand] - mu[has_demand]) / sigma[has_demand]
+            count_loss = (0.5 * normalized_error.square() + torch.log(sigma[has_demand])).mean()
 
-        # NLL calibrates the uncertainty interval.  This auxiliary term trains
-        # the central forecast on the metric used by the serving workload.
-        request_prediction = torch.expm1(mu).clamp_min(0.0)
-        request_target = torch.expm1(target).clamp_min(0.0)
-        request_mae = torch.abs(request_prediction - request_target).mean()
+            # Keep direct count-space pressure on the positive-count head.
+            request_prediction = torch.expm1(mu[has_demand]).clamp_min(0.0)
+            request_target = torch.expm1(target[has_demand]).clamp_min(0.0)
+            request_mae = torch.abs(request_prediction - request_target).mean()
+        else:
+            count_loss = occurrence_loss.new_zeros(())
+            request_mae = occurrence_loss.new_zeros(())
 
-        return loss.mean() + REQUEST_MAE_LOSS_WEIGHT * request_mae / REQUEST_MAE_LOSS_SCALE
+        return (
+            OCCURRENCE_LOSS_WEIGHT * occurrence_loss
+            + POSITIVE_COUNT_LOSS_WEIGHT * count_loss
+            + REQUEST_MAE_LOSS_WEIGHT * request_mae / REQUEST_MAE_LOSS_SCALE
+        )
 
 
 # ==========================================================

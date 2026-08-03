@@ -71,6 +71,14 @@ class DistributionHead(nn.Module):
 
         )
 
+        # A separate occurrence head prevents the count distribution from
+        # having to represent both an exact zero and a positive workload.
+        self.occurrence_head = nn.Sequential(
+            nn.Linear(D_MODEL, D_MODEL // 2),
+            nn.GELU(),
+            nn.Linear(D_MODEL // 2, 1),
+        )
+
     def forward(self, decoder_output, baseline):
 
         mu = self.mu_head(
@@ -87,11 +95,15 @@ class DistributionHead(nn.Module):
 
         sigma = MIN_LOG_SIGMA + (MAX_LOG_SIGMA - MIN_LOG_SIGMA) * torch.sigmoid(raw_sigma)
 
+        occurrence_logit = self.occurrence_head(decoder_output).squeeze(-1)
+
         return {
 
             "mu": mu,
 
-            "sigma": sigma
+            "sigma": sigma,
+            "occurrence_logit": occurrence_logit,
+            "occurrence_probability": torch.sigmoid(occurrence_logit),
 
         }
 

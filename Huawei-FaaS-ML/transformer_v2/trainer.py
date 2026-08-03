@@ -5,6 +5,7 @@ import torch
 from torch.nn.utils import clip_grad_norm_
 
 from .config import *
+from .distribution import hurdle_request_quantile
 
 
 # ==========================================================
@@ -265,7 +266,7 @@ class Trainer:
 
     def validate_request_mae(self, loader):
 
-        """MAE of the lognormal median in original request-count space."""
+        """MAE of the zero-inflated distribution median in request space."""
 
         self.model.eval()
         total_error = 0.0
@@ -287,7 +288,12 @@ class Trainer:
 
             )
 
-            forecast = torch.expm1(prediction["mu"]).clamp_min(0.0)
+            forecast = hurdle_request_quantile(
+                prediction["mu"],
+                prediction["sigma"],
+                prediction["occurrence_probability"],
+                0.5,
+            )
             target = torch.expm1(batch["target"].to(self.device, non_blocking=True)).clamp_min(0.0)
             total_error += torch.abs(forecast - target).sum().item()
             total_values += target.numel()

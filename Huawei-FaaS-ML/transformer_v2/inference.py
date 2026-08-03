@@ -61,17 +61,45 @@ def _warm_capacity_from_history(past_target):
     return float(np.percentile(recent, 90))
 
 
-def format_prediction_output(mu, sigma, past_target):
+def _hurdle_moments(mu, sigma, probability):
 
-    mean, std = _lognormal_moments(mu, sigma)
+    conditional_mean, _ = _lognormal_moments(mu, sigma)
+    conditional_second_moment = (
+        np.exp(2.0 * mu + 2.0 * sigma ** 2)
+        - 2.0 * np.exp(mu + 0.5 * sigma ** 2)
+        + 1.0
+    )
+    mean = probability * conditional_mean
+    variance = probability * conditional_second_moment - mean ** 2
+    return mean, np.sqrt(np.maximum(variance, 1e-12))
+
+
+def _hurdle_quantile(mu, sigma, probability, quantile):
+
+    probability = np.clip(probability, 1e-6, 1.0 - 1e-6)
+    conditional_quantile = (quantile - (1.0 - probability)) / probability
+    positive = conditional_quantile > 0.0
+    conditional_quantile = np.clip(conditional_quantile, 1e-6, 1.0 - 1e-6)
+    normal = torch.distributions.Normal(0.0, 1.0)
+    z_values = normal.icdf(torch.as_tensor(conditional_quantile, dtype=torch.float32)).numpy()
+    values = np.maximum(0.0, np.expm1(mu + z_values * sigma))
+    return np.where(positive, values, 0.0)
+
+
+def format_prediction_output(mu, sigma, past_target, occurrence_probability=None):
+
+    if occurrence_probability is None:
+        occurrence_probability = np.ones_like(mu)
+
+    mean, std = _hurdle_moments(mu, sigma, occurrence_probability)
 
     quantiles = {
 
-        "q10": _lognormal_quantile(mu, sigma, Q10_Z),
+        "q10": _hurdle_quantile(mu, sigma, occurrence_probability, 0.10),
 
-        "q50": _lognormal_quantile(mu, sigma, Q50_Z),
+        "q50": _hurdle_quantile(mu, sigma, occurrence_probability, 0.50),
 
-        "q90": _lognormal_quantile(mu, sigma, Q90_Z),
+        "q90": _hurdle_quantile(mu, sigma, occurrence_probability, 0.90),
 
     }
 
@@ -81,14 +109,12 @@ def format_prediction_output(mu, sigma, past_target):
 
     )
 
-    cold_start_risk = 1.0 - _normal_cdf(
-
-        warm_capacity,
-
-        mean,
-
-        std
+    # P(Y > capacity) for a hurdle distribution.  Positive demand follows a
+    # lognormal count distribution; the zero atom never exceeds capacity.
+    conditional_risk = 1.0 - _normal_cdf(
+        np.log1p(warm_capacity), mu, sigma
     )
+    cold_start_risk = occurrence_probability * conditional_risk
 
     return {
 
@@ -254,13 +280,17 @@ class ForecastEngine:
 
         sigma = prediction["sigma"].cpu().numpy()[0]
 
+        occurrence_probability = prediction["occurrence_probability"].cpu().numpy()[0]
+
         return format_prediction_output(
 
             mu,
 
             sigma,
 
-            sample["past_target"].cpu().numpy()
+            sample["past_target"].cpu().numpy(),
+
+            occurrence_probability,
 
         )
 

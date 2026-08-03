@@ -22,6 +22,7 @@ from .config import (
     RANDOM_SEED,
 )
 from .dataset import HuaweiForecastDataset
+from .distribution import hurdle_request_mean, hurdle_request_quantile
 from .model import HuaweiForecastTransformer
 
 
@@ -53,6 +54,7 @@ def main():
     model.eval()
 
     median_errors, mean_errors, baseline_errors, targets = [], [], [], []
+    occurrence_probabilities = []
     for batch in loader:
         inputs = {
             name: batch[name].to(DEVICE, non_blocking=True)
@@ -64,10 +66,16 @@ def main():
         target_log = batch["target"].to(DEVICE, non_blocking=True)
         prediction = model(**inputs)
 
-        # The median (q50) is the MAE-optimal point forecast; the mean is the
-        # RMSE-optimal point forecast for a calibrated lognormal distribution.
-        request_median = torch.expm1(prediction["mu"]).clamp_min(0)
-        request_mean = torch.expm1(prediction["mu"] + 0.5 * prediction["sigma"].square()).clamp_min(0)
+        # q50 is MAE-optimal and the expectation is RMSE-optimal for the
+        # zero-inflated lognormal distribution.
+        request_median = hurdle_request_quantile(
+            prediction["mu"], prediction["sigma"],
+            prediction["occurrence_probability"], 0.5,
+        )
+        request_mean = hurdle_request_mean(
+            prediction["mu"], prediction["sigma"],
+            prediction["occurrence_probability"],
+        )
         request_target = torch.expm1(target_log).clamp_min(0)
         persistence = torch.expm1(inputs["past_target"][:, -1:]).expand_as(request_target)
 
@@ -75,11 +83,15 @@ def main():
         mean_errors.append((request_mean - request_target).detach().cpu().numpy().ravel())
         baseline_errors.append((persistence - request_target).detach().cpu().numpy().ravel())
         targets.append(request_target.detach().cpu().numpy().ravel())
+        occurrence_probabilities.append(
+            prediction["occurrence_probability"].detach().cpu().numpy().ravel()
+        )
 
     median_errors = np.concatenate(median_errors)
     mean_errors = np.concatenate(mean_errors)
     baseline_errors = np.concatenate(baseline_errors)
     targets = np.concatenate(targets)
+    occurrence_probabilities = np.concatenate(occurrence_probabilities)
 
     def metrics(errors):
         return float(np.mean(np.abs(errors))), float(math.sqrt(np.mean(errors ** 2)))
@@ -100,6 +112,16 @@ def main():
     print(f"Persistence MAE     : {base_mae:.4f}")
     print(f"Persistence RMSE    : {base_rmse:.4f}")
     print(f"MAE improvement     : {(1 - model_mae / base_mae) * 100:.2f}%")
+
+    actual_active = targets > 0
+    predicted_active = occurrence_probabilities >= 0.5
+    true_positive = np.sum(predicted_active & actual_active)
+    precision = true_positive / max(np.sum(predicted_active), 1)
+    recall = true_positive / max(np.sum(actual_active), 1)
+    f1 = 2 * precision * recall / max(precision + recall, 1e-12)
+    print(f"Occurrence precision: {precision:.4f}")
+    print(f"Occurrence recall   : {recall:.4f}")
+    print(f"Occurrence F1       : {f1:.4f}")
 
     for label, mask in (("zero demand", targets == 0), ("active demand", targets > 0)):
         if mask.any():
