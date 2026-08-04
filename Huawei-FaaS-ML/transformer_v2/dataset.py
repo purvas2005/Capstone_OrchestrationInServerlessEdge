@@ -345,6 +345,9 @@ class HuaweiForecastDataset(Dataset):
             if column in frame.columns:
                 frame[column] = pd.to_numeric(frame[column], errors="coerce")
 
+        frame.loc[:, PAST_VALUE_FEATURES] = frame.loc[:, PAST_VALUE_FEATURES].astype(np.float32)
+        frame.loc[:, TIME_FEATURES] = frame.loc[:, TIME_FEATURES].astype(np.float32)
+
         frame = frame.fillna(0)
         frame["raw_target"] = frame[TARGET_COLUMN].astype(np.float32)
 
