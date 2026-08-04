@@ -343,18 +343,15 @@ class HuaweiForecastDataset(Dataset):
 
         for column in PAST_VALUE_FEATURES + TIME_FEATURES + [TARGET_COLUMN, "minute"]:
             if column in frame.columns:
-                frame[column] = pd.to_numeric(frame[column], errors="coerce")
-
-        frame.loc[:, PAST_VALUE_FEATURES] = frame.loc[:, PAST_VALUE_FEATURES].astype(np.float32)
-        frame.loc[:, TIME_FEATURES] = frame.loc[:, TIME_FEATURES].astype(np.float32)
+                frame[column] = pd.to_numeric(frame[column], errors="coerce").astype(np.float32)
 
         frame = frame.fillna(0)
         frame["raw_target"] = frame[TARGET_COLUMN].astype(np.float32)
 
         feature_frame = frame[PAST_VALUE_FEATURES].astype(np.float32)
-        frame.loc[:, PAST_VALUE_FEATURES] = (
-            (feature_frame - self.feature_mean) / self.feature_std
-        ).to_numpy(dtype=np.float32)
+        normalized_features = (feature_frame - self.feature_mean) / self.feature_std
+        for column in PAST_VALUE_FEATURES:
+            frame[column] = normalized_features[column].to_numpy(dtype=np.float32)
 
         return frame
 
