@@ -170,24 +170,22 @@ BATCH_SIZE = 64
 
 EPOCHS = 20
 
-# Dense minute series yield roughly ten times as many windows as the sparse
-# event-only table.  Validate the new data semantics with this bounded run
-# before intentionally removing these limits for final training.
-# CPU-friendly pilot.  It validates the dense-data pipeline before a longer
-# experiment on a GPU-capable instance.
-PILOT_TRAIN_SAMPLES = 25_000
-PILOT_VALIDATION_SAMPLES = 5_000
-PILOT_EPOCHS = 5
-PILOT_EVALUATION_SAMPLES = 5_000
-# Loading all 6,949 dense function series exceeds the RAM of small training
-# instances.  Keep complete series for a deterministic pilot subset so its
-# chronological validation remains valid.
-PILOT_MAX_FUNCTION_GROUPS = 300
+# ----------------------------------------------------------
+# Full Dataset Training
+# ----------------------------------------------------------
+# Set all pilot limits to None so every function group and
+# every training/validation window is used.
+# ----------------------------------------------------------
 
-# Random windows overwhelmingly contain no requests in the dense trace.
-# Balance only the training subset by whether its future horizon has activity;
-# validation and test data retain their natural distributions.
-ACTIVE_TRAIN_FRACTION = 0.50
+PILOT_TRAIN_SAMPLES = None
+PILOT_VALIDATION_SAMPLES = None
+PILOT_EPOCHS = None
+PILOT_EVALUATION_SAMPLES = None
+PILOT_MAX_FUNCTION_GROUPS = None
+
+# Keep balanced sampling disabled for the full run.
+# Train on the natural data distribution.
+ACTIVE_TRAIN_FRACTION = None
 
 LEARNING_RATE = 1e-4
 
@@ -232,16 +230,6 @@ DEVICE = torch.device(
 
 PRINT_EVERY = 50
 
-# Pilot checkpoints are isolated from the promoted full model so experiments
-# can be compared without overwriting the currently serving checkpoint.
-CHECKPOINT_NAME = (
-    "forecast_transformer_hurdle_pilot.pt"
-    if PILOT_TRAIN_SAMPLES is not None
-    else "forecast_transformer_hurdle.pt"
-)
+CHECKPOINT_NAME = "forecast_transformer_hurdle.pt"
 
-TRAIN_LOG = (
-    MODEL_DIR / "training_log_pilot.csv"
-    if PILOT_TRAIN_SAMPLES is not None
-    else MODEL_DIR / "training_log_full.csv"
-)
+TRAIN_LOG = MODEL_DIR / "training_log_full.csv"
