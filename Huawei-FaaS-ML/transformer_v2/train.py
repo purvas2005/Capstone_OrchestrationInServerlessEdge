@@ -30,6 +30,16 @@ print(f"Total Sequences : {len(dataset):,}")
 
 train_dataset, validation_dataset, test_dataset = dataset.temporal_split()
 
+print()
+print("=" * 70)
+print("Dataset Summary")
+print("=" * 70)
+
+print(f"Total windows      : {len(dataset):,}")
+print(f"Training windows   : {len(train_dataset):,}")
+print(f"Validation windows : {len(validation_dataset):,}")
+print(f"Test windows       : {len(test_dataset):,}")
+
 
 def deterministic_subsample(source, maximum, seed):
 
