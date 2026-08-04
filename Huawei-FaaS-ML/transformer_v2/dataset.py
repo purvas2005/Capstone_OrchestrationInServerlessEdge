@@ -143,157 +143,50 @@ class HuaweiForecastDataset(Dataset):
 
         self.connection = duckdb.connect(str(db_path))
 
-        if _table_exists(self.connection, FEATURE_TABLE):
-            print(f"Using engineered table: {FEATURE_TABLE}")
-            self._loaded_from_raw = False
-            if PILOT_MAX_FUNCTION_GROUPS is None:
-                query = f"""
-                SELECT *
-                FROM {FEATURE_TABLE}
-                ORDER BY
-                    region,
-                    clusterName,
-                    funcName,
-                    minute
-                """
-            else:
-                print(
-                    "Pilot mode: loading "
-                    f"{PILOT_MAX_FUNCTION_GROUPS} deterministic function groups."
-                )
-                query = f"""
-                WITH selected_groups AS (
-                    SELECT region, clusterName, funcName
-                    FROM (
-                        SELECT DISTINCT region, clusterName, funcName
-                        FROM {FEATURE_TABLE}
-                    )
-                    ORDER BY hash(region, clusterName, funcName)
-                    LIMIT {PILOT_MAX_FUNCTION_GROUPS}
-                )
-                SELECT features.*
-                FROM {FEATURE_TABLE} AS features
-                INNER JOIN selected_groups AS selected
-                    USING (region, clusterName, funcName)
-                ORDER BY
-                    features.region,
-                    features.clusterName,
-                    features.funcName,
-                    features.minute
-                """
-            frame = self.connection.execute(query).df()
-        elif _table_exists(self.connection, "requests"):
-            print("Using raw Huawei trace table: requests")
-            self._loaded_from_raw = True
-            frame = self.connection.execute(
-                "SELECT * FROM requests"
-            ).df()
-            frame = self._build_feature_frame_from_raw(frame)
-        else:
+        if not _table_exists(self.connection, FEATURE_TABLE):
             raise ValueError(
-                "No usable table found. Expected either `feature_table` or `requests` in the DuckDB database."
+                f"No usable table found. Expected `{FEATURE_TABLE}` in the DuckDB database. "
+                "Build the engineered feature table first to avoid loading the raw trace into RAM."
             )
 
-        if "region" not in frame.columns:
-            frame["region"] = "global"
+        print(f"Using engineered table: {FEATURE_TABLE}")
 
-        frame = frame.fillna(0)
+        self._loaded_from_raw = False
+        self._cached_group_id = None
+        self._cached_group_frame = None
 
-        # --------------------------------------------------
-        # Encode / normalize identifiers
-        # --------------------------------------------------
-
-        frame["region"] = frame["region"].astype(str)
-        frame["clusterName"] = frame["clusterName"].astype(str)
-        frame["funcName"] = frame["funcName"].astype(str)
+        self.groups = self._load_group_metadata()
+        self.group_sample_counts = []
 
         self.region_map = {
-            value: index for index, value in enumerate(sorted(frame["region"].unique()))
+            value: index
+            for index, value in enumerate(sorted({group["region"] for group in self.groups}))
         }
 
         self.cluster_map = {
-            value: index for index, value in enumerate(sorted(frame["clusterName"].unique()))
+            value: index
+            for index, value in enumerate(sorted({group["clusterName"] for group in self.groups}))
         }
 
-        # ``funcName`` is only unique within a region/cluster.  The learned
-        # function embedding must use the same identity as the time-series
-        # grouping and metadata tables.
-        function_keys = (
-            frame["region"]
-            + "::"
-            + frame["clusterName"]
-            + "::"
-            + frame["funcName"]
-        )
+        function_keys = [
+            f"{group['region']}::{group['clusterName']}::{group['funcName']}"
+            for group in self.groups
+        ]
         self.function_map = {
-            value: index for index, value in enumerate(sorted(function_keys.unique()))
+            value: index for index, value in enumerate(sorted(function_keys))
         }
 
-        frame["region"] = frame["region"].map(self.region_map).astype(np.int64)
-        frame["clusterName"] = frame["clusterName"].map(self.cluster_map).astype(np.int64)
-        frame["funcName"] = function_keys.map(self.function_map).astype(np.int64)
+        for group, function_key in zip(self.groups, function_keys):
+            group["static"] = {
+                "function": self.function_map[function_key],
+                "region": self.region_map[group["region"]],
+                "cluster": self.cluster_map[group["clusterName"]],
+                "category": self._encode_category(group["category"]),
+                "stability": self._encode_stability(group["stability"]),
+            }
 
-        # --------------------------------------------------
-        # Metadata labels
-        # --------------------------------------------------
-
-        if self._loaded_from_raw or "category" not in frame.columns:
-            frame["category"] = self._derive_categories(frame)
-        else:
-            if frame["category"].dtype == object:
-                frame["category"] = (
-                    frame["category"].map(CATEGORY_MAP).fillna(CATEGORY_MAP["Rare"])
-                )
-            else:
-                frame["category"] = pd.to_numeric(frame["category"], errors="coerce").fillna(0)
-            frame["category"] = frame["category"].astype(np.int64)
-
-        if self._loaded_from_raw or "stability" not in frame.columns:
-            frame["stability"] = self._derive_stability(frame)
-        else:
-            if frame["stability"].dtype == object:
-                frame["stability"] = (
-                    frame["stability"].map(STABILITY_MAP).fillna(STABILITY_MAP["Noisy"])
-                )
-            else:
-                frame["stability"] = pd.to_numeric(frame["stability"], errors="coerce").fillna(0)
-            frame["stability"] = frame["stability"].astype(np.int64)
-
-        # --------------------------------------------------
-        # Ensure model features exist and are numeric
-        # --------------------------------------------------
-
-        frame = _add_missing_columns(frame, PAST_VALUE_FEATURES, default=0.0)
-        frame = _add_missing_columns(frame, TIME_FEATURES, default=0.0)
-
-        for column in PAST_VALUE_FEATURES + TIME_FEATURES + [TARGET_COLUMN, "minute"]:
-            if column in frame.columns:
-                frame[column] = pd.to_numeric(frame[column], errors="coerce")
-
-        frame = frame.fillna(0)
-        frame["raw_target"] = frame[TARGET_COLUMN].astype(np.float32)
-        frame = frame.astype(
-            {column: np.float32 for column in PAST_VALUE_FEATURES}
-        )
-
-        # --------------------------------------------------
-        # Normalize numerical inputs
-        # --------------------------------------------------
-
-        feature_frame = frame[PAST_VALUE_FEATURES].astype(np.float32)
-
-        self.feature_mean = feature_frame.mean()
-        self.feature_std = feature_frame.std(ddof=0).replace(0, 1.0)
-
-        frame.loc[:, PAST_VALUE_FEATURES] = (
-            (feature_frame - self.feature_mean) / self.feature_std
-        ).to_numpy(dtype=np.float32)
-
+        self.feature_mean, self.feature_std = self._load_feature_statistics()
         self.target_transform = "log1p"
-
-        # --------------------------------------------------
-        # Vocabulary sizes
-        # --------------------------------------------------
 
         self.num_functions = len(self.function_map)
         self.num_regions = len(self.region_map)
@@ -309,58 +202,183 @@ class HuaweiForecastDataset(Dataset):
         print("Categories:", self.num_categories)
         print("Stability :", self.num_stability)
 
-        # --------------------------------------------------
-        # Build sequences
-        # --------------------------------------------------
-
-        self.groups = []
-        self.group_sample_counts = []
-
-        grouped = frame.groupby(
-            ["region", "clusterName", "funcName"],
-            sort=False,
-        )
-
-        print(f"Groups : {len(grouped)}")
-
-        for _, group in grouped:
-
-            group = group.sort_values("minute").reset_index(drop=True)
-
-            if len(group) < SEQUENCE_LENGTH + PREDICTION_HORIZON:
+        for group in self.groups:
+            max_start = group["row_count"] - SEQUENCE_LENGTH - PREDICTION_HORIZON + 1
+            if max_start < 1:
                 continue
-
-            values = group[PAST_VALUE_FEATURES].to_numpy(dtype=np.float32)
-            past_time = group[TIME_FEATURES].to_numpy(dtype=np.float32)
-            target = np.log1p(group["raw_target"].to_numpy(dtype=np.float32))
-
-            static = {
-                "function": int(group["funcName"].iloc[0]),
-                "region": int(group["region"].iloc[0]),
-                "cluster": int(group["clusterName"].iloc[0]),
-                "category": int(group["category"].iloc[0]),
-                "stability": int(group["stability"].iloc[0]),
-            }
-
-            group_data = {
-                "values": values,
-                "time": past_time,
-                "target": target,
-                "static": static,
-            }
-
-            group_id = len(self.groups)
-            self.groups.append(group_data)
-
-            max_start = len(group) - SEQUENCE_LENGTH - PREDICTION_HORIZON + 1
-
             self.group_sample_counts.append(max_start)
 
         self.sample_offsets = np.concatenate(
             ([0], np.cumsum(self.group_sample_counts, dtype=np.int64))
         )
 
+        print(f"Groups : {len(self.groups)}")
         print(f"Sequences : {len(self):,}")
+
+    def _encode_category(self, value):
+
+        if isinstance(value, str):
+            return int(CATEGORY_MAP.get(value, CATEGORY_MAP["Rare"]))
+
+        return int(pd.to_numeric(pd.Series([value]), errors="coerce").fillna(0).iloc[0])
+
+    def _encode_stability(self, value):
+
+        if isinstance(value, str):
+            return int(STABILITY_MAP.get(value, STABILITY_MAP["Noisy"]))
+
+        return int(pd.to_numeric(pd.Series([value]), errors="coerce").fillna(0).iloc[0])
+
+    def _load_group_metadata(self):
+
+        if PILOT_MAX_FUNCTION_GROUPS is None:
+            query = f"""
+            SELECT
+                region,
+                clusterName,
+                funcName,
+                COUNT(*) AS row_count,
+                ANY_VALUE(category) AS category,
+                ANY_VALUE(stability) AS stability
+            FROM {FEATURE_TABLE}
+            GROUP BY region, clusterName, funcName
+            ORDER BY region, clusterName, funcName
+            """
+        else:
+            print(
+                "Pilot mode: loading "
+                f"{PILOT_MAX_FUNCTION_GROUPS} deterministic function groups."
+            )
+            query = f"""
+            WITH selected_groups AS (
+                SELECT region, clusterName, funcName
+                FROM (
+                    SELECT DISTINCT region, clusterName, funcName
+                    FROM {FEATURE_TABLE}
+                )
+                ORDER BY hash(region, clusterName, funcName)
+                LIMIT {PILOT_MAX_FUNCTION_GROUPS}
+            )
+            SELECT
+                features.region,
+                features.clusterName,
+                features.funcName,
+                COUNT(*) AS row_count,
+                ANY_VALUE(features.category) AS category,
+                ANY_VALUE(features.stability) AS stability
+            FROM {FEATURE_TABLE} AS features
+            INNER JOIN selected_groups AS selected
+                USING (region, clusterName, funcName)
+            GROUP BY features.region, features.clusterName, features.funcName
+            ORDER BY features.region, features.clusterName, features.funcName
+            """
+
+        rows = self.connection.execute(query).fetchall()
+
+        groups = []
+        for region, cluster_name, function_name, row_count, category, stability in rows:
+            row_count = int(row_count)
+            if row_count < SEQUENCE_LENGTH + PREDICTION_HORIZON:
+                continue
+
+            groups.append(
+                {
+                    "region": str(region),
+                    "clusterName": str(cluster_name),
+                    "funcName": str(function_name),
+                    "row_count": row_count,
+                    "category": category,
+                    "stability": stability,
+                }
+            )
+
+        return groups
+
+    def _load_feature_statistics(self):
+
+        select_columns = []
+        for column in PAST_VALUE_FEATURES:
+            select_columns.append(
+                f"AVG(COALESCE({column}, 0.0)) AS {column}_mean"
+            )
+            select_columns.append(
+                f"COALESCE(STDDEV_POP(COALESCE({column}, 0.0)), 0.0) AS {column}_std"
+            )
+
+        row = self.connection.execute(
+            f"""
+            SELECT
+                {', '.join(select_columns)}
+            FROM {FEATURE_TABLE}
+            """
+        ).fetchone()
+
+        means = {}
+        stds = {}
+        for index, column in enumerate(PAST_VALUE_FEATURES):
+            mean = float(row[index * 2] or 0.0)
+            std = float(row[index * 2 + 1] or 0.0)
+            if std == 0:
+                std = 1.0
+            means[column] = mean
+            stds[column] = std
+
+        return pd.Series(means), pd.Series(stds)
+
+    def _prepare_group_frame(self, frame):
+
+        frame = frame.copy()
+
+        if "region" not in frame.columns:
+            frame["region"] = "global"
+
+        frame = frame.fillna(0)
+
+        frame["region"] = frame["region"].astype(str)
+        frame["clusterName"] = frame["clusterName"].astype(str)
+        frame["funcName"] = frame["funcName"].astype(str)
+
+        frame = _add_missing_columns(frame, PAST_VALUE_FEATURES, default=0.0)
+        frame = _add_missing_columns(frame, TIME_FEATURES, default=0.0)
+
+        for column in PAST_VALUE_FEATURES + TIME_FEATURES + [TARGET_COLUMN, "minute"]:
+            if column in frame.columns:
+                frame[column] = pd.to_numeric(frame[column], errors="coerce")
+
+        frame = frame.fillna(0)
+        frame["raw_target"] = frame[TARGET_COLUMN].astype(np.float32)
+
+        feature_frame = frame[PAST_VALUE_FEATURES].astype(np.float32)
+        frame.loc[:, PAST_VALUE_FEATURES] = (
+            (feature_frame - self.feature_mean) / self.feature_std
+        ).to_numpy(dtype=np.float32)
+
+        return frame
+
+    def _load_group_frame(self, group_id):
+
+        if self._cached_group_id == group_id and self._cached_group_frame is not None:
+            return self._cached_group_frame
+
+        group = self.groups[group_id]
+        frame = self.connection.execute(
+            f"""
+            SELECT *
+            FROM {FEATURE_TABLE}
+            WHERE region = ?
+                AND clusterName = ?
+                AND funcName = ?
+            ORDER BY minute
+            """,
+            [group["region"], group["clusterName"], group["funcName"]],
+        ).df()
+
+        frame = self._prepare_group_frame(frame)
+
+        self._cached_group_id = group_id
+        self._cached_group_frame = frame
+
+        return frame
 
     # ======================================================
     # Raw Huawei trace -> feature table
@@ -617,7 +635,9 @@ class HuaweiForecastDataset(Dataset):
         start = int(index - self.sample_offsets[group_id])
         future_start = start + SEQUENCE_LENGTH
         future_end = future_start + PREDICTION_HORIZON
-        return bool(np.any(self.groups[group_id]["target"][future_start:future_end] > 0))
+        frame = self._load_group_frame(group_id)
+        target = frame["raw_target"].to_numpy(dtype=np.float32)
+        return bool(np.any(target[future_start:future_end] > 0))
 
     # ======================================================
     # Get Sample
@@ -629,14 +649,15 @@ class HuaweiForecastDataset(Dataset):
         group_id = int(np.searchsorted(self.sample_offsets, index, side="right") - 1)
         start = int(index - self.sample_offsets[group_id])
         group = self.groups[group_id]
+        frame = self._load_group_frame(group_id)
 
         end = start + SEQUENCE_LENGTH
         future = end + PREDICTION_HORIZON
 
-        past_values = group["values"][start:end]
-        past_time = group["time"][start:end]
-        future_time = group["time"][end:future]
-        target = group["target"][end:future]
+        past_values = frame[PAST_VALUE_FEATURES].to_numpy(dtype=np.float32)[start:end]
+        past_time = frame[TIME_FEATURES].to_numpy(dtype=np.float32)[start:end]
+        future_time = frame[TIME_FEATURES].to_numpy(dtype=np.float32)[end:future]
+        target = np.log1p(frame["raw_target"].to_numpy(dtype=np.float32)[end:future])
         static = group["static"]
 
         return {
@@ -648,8 +669,11 @@ class HuaweiForecastDataset(Dataset):
             "cluster": torch.tensor(static["cluster"], dtype=torch.long),
             "category": torch.tensor(static["category"], dtype=torch.long),
             "stability": torch.tensor(static["stability"], dtype=torch.long),
-              "past_target": torch.tensor(group["target"][start:end], dtype=torch.float32),
-              "target": torch.tensor(target, dtype=torch.float32),
+                        "past_target": torch.tensor(
+                                np.log1p(frame["raw_target"].to_numpy(dtype=np.float32)[start:end]),
+                                dtype=torch.float32,
+                        ),
+                        "target": torch.tensor(target, dtype=torch.float32),
         }
 
     # ======================================================
