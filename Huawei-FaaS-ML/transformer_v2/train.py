@@ -235,13 +235,19 @@ trainer = Trainer(
 # Train
 # ==========================================================
 
+# Decide how many epochs to run (diagnostic print added to debug unexpected values)
+epochs_to_run = PILOT_EPOCHS if PILOT_TRAIN_SAMPLES is not None else EPOCHS
+print()
+print(f"Config: PILOT_TRAIN_SAMPLES={PILOT_TRAIN_SAMPLES}, PILOT_EPOCHS={PILOT_EPOCHS}, EPOCHS={EPOCHS}")
+print(f"Training for {epochs_to_run} epochs\n")
+
 trainer.fit(
 
     train_loader,
 
     validation_loader,
 
-    PILOT_EPOCHS if PILOT_TRAIN_SAMPLES is not None else EPOCHS
+    epochs_to_run
 
 )
 
