@@ -169,7 +169,7 @@ EPOCHS = 20
 # before intentionally removing these limits for final training.
 # CPU-friendly pilot.  It validates the dense-data pipeline before a longer
 # experiment on a GPU-capable instance.
-PILOT_TRAIN_SAMPLES = 25_000
+PILOT_TRAIN_SAMPLES = 10_000
 PILOT_VALIDATION_SAMPLES = 5_000
 PILOT_EPOCHS = 5
 PILOT_EVALUATION_SAMPLES = 5_000
