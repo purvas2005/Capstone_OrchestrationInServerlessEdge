@@ -79,6 +79,8 @@ def balanced_activity_subsample(source, maximum, seed, active_fraction):
     return Subset(source, selected.tolist())
 
 
+print(f"Debug: PILOT_TRAIN_SAMPLES={PILOT_TRAIN_SAMPLES!r}")
+
 train_dataset = balanced_activity_subsample(
 
     train_dataset,
@@ -109,7 +111,7 @@ print(f"Validation Samples : {len(validation_dataset):,}")
 
 print(f"Test Samples       : {len(test_dataset):,} (held out)")
 
-if PILOT_TRAIN_SAMPLES is not None:
+if PILOT_TRAIN_SAMPLES:
 
     print("Pilot mode: deterministic training/validation subsets are active.")
 
@@ -236,7 +238,7 @@ trainer = Trainer(
 # ==========================================================
 
 # Decide how many epochs to run (diagnostic print added to debug unexpected values)
-epochs_to_run = PILOT_EPOCHS if PILOT_TRAIN_SAMPLES is not None else EPOCHS
+epochs_to_run = PILOT_EPOCHS if PILOT_TRAIN_SAMPLES else EPOCHS
 print()
 print(f"Config: PILOT_TRAIN_SAMPLES={PILOT_TRAIN_SAMPLES}, PILOT_EPOCHS={PILOT_EPOCHS}, EPOCHS={EPOCHS}")
 print(f"Training for {epochs_to_run} epochs\n")

@@ -5,6 +5,10 @@ from torch.utils.data import Subset
 
 from .config import PROJECT_ROOT, PILOT_EVALUATION_SAMPLES, RANDOM_SEED
 from .inference import ForecastEngine
+from .config import PREDICTION_HORIZON
+
+# Number of future minutes to include in the CSV (first N timesteps)
+N_MINUTES = 2
 
 
 def main(output_path=None, max_samples=None):
@@ -25,10 +29,16 @@ def main(output_path=None, max_samples=None):
         output_path = PROJECT_ROOT / "results" / "predictions.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # invert function map to get human-readable function key
+    inverse_function_map = {v: k for k, v in dataset.function_map.items()}
+
     with open(output_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
             "sample_index",
+            "function_idx",
+            "function_key",
+            "minute_offset",
             "mean",
             "std",
             "q10",
@@ -43,21 +53,46 @@ def main(output_path=None, max_samples=None):
             sample = test[i]
             result = engine.predict(sample)
 
-            # join horizon arrays with semicolons to keep a single CSV cell
-            mean = ";".join(map(str, np.round(result["mean"], 6).tolist()))
-            std = ";".join(map(str, np.round(result["std"], 6).tolist()))
-            q10 = ";".join(map(str, np.round(result["quantiles"]["q10"], 6).tolist()))
-            q50 = ";".join(map(str, np.round(result["quantiles"]["q50"], 6).tolist()))
-            q90 = ";".join(map(str, np.round(result["quantiles"]["q90"], 6).tolist()))
+            func_idx = int(sample["function"].item())
+            func_key = inverse_function_map.get(func_idx, "unknown")
 
-            csr = float(result["post_processing"]["cold_start_risk"])
+            # ensure arrays
+            mean_arr = np.asarray(result["mean"])
+            std_arr = np.asarray(result["std"])
+            q10_arr = np.asarray(result["quantiles"]["q10"])
+            q50_arr = np.asarray(result["quantiles"]["q50"])
+            q90_arr = np.asarray(result["quantiles"]["q90"])
+            csr_arr = np.asarray(result["post_processing"]["cold_start_risk"])
             wc = float(result["post_processing"]["warm_capacity"])
 
-            # target is in log1p space in dataset; convert back
-            target_vals = np.round(np.expm1(sample["target"].numpy()).tolist(), 6)
-            target = ";".join(map(str, target_vals))
+            # number of timesteps to emit (cap by available horizon)
+            n_emit = min(N_MINUTES, len(mean_arr), PREDICTION_HORIZON)
 
-            writer.writerow([i, mean, std, q10, q50, q90, csr, wc, target])
+            target_vals = np.round(np.expm1(sample["target"].numpy()).tolist(), 6)
+
+            for offset in range(n_emit):
+                mean = float(np.round(mean_arr[offset], 6))
+                std = float(np.round(std_arr[offset], 6))
+                q10 = float(np.round(q10_arr[offset], 6))
+                q50 = float(np.round(q50_arr[offset], 6))
+                q90 = float(np.round(q90_arr[offset], 6))
+                csr = float(np.round(csr_arr[offset], 6)) if csr_arr.size > 1 else float(np.round(csr_arr.item(), 6))
+                target = target_vals[offset] if offset < len(target_vals) else ""
+
+                writer.writerow([
+                    i,
+                    func_idx,
+                    func_key,
+                    offset + 1,
+                    mean,
+                    std,
+                    q10,
+                    q50,
+                    q90,
+                    csr,
+                    wc,
+                    target,
+                ])
 
     print(f"Wrote predictions to {output_path}")
 
