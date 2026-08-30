@@ -164,19 +164,13 @@ BATCH_SIZE = 64
 
 EPOCHS = 20
 
-# Dense minute series yield roughly ten times as many windows as the sparse
-# event-only table.  Validate the new data semantics with this bounded run
-# before intentionally removing these limits for final training.
-# CPU-friendly pilot.  It validates the dense-data pipeline before a longer
-# experiment on a GPU-capable instance.
-PILOT_TRAIN_SAMPLES = 10_000
-PILOT_VALIDATION_SAMPLES = 5_000
-PILOT_EPOCHS = 5
-PILOT_EVALUATION_SAMPLES = 5_000
-# Loading all 6,949 dense function series exceeds the RAM of small training
-# instances.  Keep complete series for a deterministic pilot subset so its
-# chronological validation remains valid.
-PILOT_MAX_FUNCTION_GROUPS = 300
+# Full-data mode: disable the pilot subset so the model trains on the entire
+# dataset and evaluation is performed on the full chronological holdout.
+PILOT_TRAIN_SAMPLES = None
+PILOT_VALIDATION_SAMPLES = None
+PILOT_EPOCHS = None
+PILOT_EVALUATION_SAMPLES = None
+PILOT_MAX_FUNCTION_GROUPS = None
 
 # Random windows overwhelmingly contain no requests in the dense trace.
 # Balance only the training subset by whether its future horizon has activity;
